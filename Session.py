@@ -30,9 +30,6 @@
 
 import sqlalchemy, sqlalchemy.sql, sqlalchemy.orm
 
-True_ = sqlalchemy.sql.text("(1 = 1)")
-False_ = sqlalchemy.sql.text("(1 = 2)")
-
 def create_engine(url):
     engine = sqlalchemy.create_engine(url)
     engine.session_arguments = {'autoflush': True,
@@ -83,32 +80,3 @@ def create_engine(url):
     engine.sessions = sessions
     engine.Session = sessions()
     return engine
-
-class View(sqlalchemy.sql.expression.TableClause, sqlalchemy.schema.SchemaItem):
-    __visit_name__ = 'table'
-
-    def __init__(self, name, metadata, expression, primary_key = 'id', **kw):
-        self._expression = expression
-        metadata.append_ddl_listener('after-create', self.create)
-        metadata.append_ddl_listener('before-drop', self.drop)
-        sqlalchemy.sql.expression.TableClause.__init__(self, name, *self._expression.columns, **kw)
-        if isinstance(primary_key, str):
-            primary_key = sqlalchemy.sql.expression.ColumnCollection(self._expression.columns[primary_key])
-	self._primary_key = primary_key
-
-    def create(self, event, metadata, bind):
-        try:
-            self.drop(event, metadata, bind)
-        except:
-            pass
-        
-        select =self._expression.compile(bind = bind)
-        params = select.construct_params()
-        sqlalchemy.schema.DDL("create view %(name)s as %(select)s" %
-                              {'name': self.name,
-                               'select': select},
-                              context=params).execute(bind)
-                              
-    def drop(self, event, metadata, bind):
-        sqlalchemy.schema.DDL("drop view %(name)s" %
-                              {'name': self.name}).execute(bind)

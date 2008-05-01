@@ -22,4 +22,5 @@
 
 if __name__ == "Argentum":
     from Session import *
+    from Entity import *
     from Model.Base import *
