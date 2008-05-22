@@ -28,7 +28,7 @@
 # there.
 
 
-import sqlalchemy, sqlalchemy.sql, sqlalchemy.orm
+import sqlalchemy, sqlalchemy.sql, sqlalchemy.orm, elixir
 
 True_ = sqlalchemy.sql.text("(1 = 1)")
 False_ = sqlalchemy.sql.text("(1 = 2)")
@@ -51,13 +51,35 @@ class View(sqlalchemy.sql.expression.TableClause, sqlalchemy.schema.SchemaItem):
         except:
             pass
         
-        select =self._expression.compile(bind = bind)
+        select = self._expression.compile(bind = bind)
         params = select.construct_params()
-        sqlalchemy.schema.DDL("create view %(name)s as %(select)s" %
-                              {'name': self.name,
-                               'select': select},
-                              context=params).execute(bind)
+
+        bind.execute(sqlalchemy.schema.DDL("create view %(name)s as %(select)s" %
+                                           {'name': self.name,
+                                            'select': select},
+                                           ),
+                     **params)
                               
     def drop(self, event, metadata, bind):
-        sqlalchemy.schema.DDL("drop view %(name)s" %
-                              {'name': self.name}).execute(bind)
+        bind.execute(sqlalchemy.schema.DDL("drop view %(name)s" %
+                                           {'name': self.name}))
+
+class ViewEntityMeta(type):
+    def __init__(self, name, bases, members):
+        super(ViewEntityMeta, self).__init__(name, bases, members)
+
+        if bases != (object,):
+            self.table = View(
+                ("%s_%s" % (self.__module__, self.__name__)).lower(),
+                elixir.metadata,
+                self.expression,
+                self.primary_key,
+                **self.clause_arguments)
+
+            sqlalchemy.orm.mapper(self, self.table)
+
+class ViewEntity(object):
+    __metaclass__ = ViewEntityMeta
+    primary_key = 'id'
+    clause_arguments = {}
+    
