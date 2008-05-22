@@ -54,15 +54,24 @@ class View(sqlalchemy.sql.expression.TableClause, sqlalchemy.schema.SchemaItem):
         select = self._expression.compile(bind = bind)
         params = select.construct_params()
 
-        bind.execute(sqlalchemy.schema.DDL("create view %(name)s as %(select)s" %
-                                           {'name': self.name,
-                                            'select': select},
-                                           ),
-                     **params)
+        bind.execute("create view %(name)s as %(select)s" %
+                     {'name': self.name,
+                      'select': select},
+                     params)
+
+        # FIXME: sqlalchemy.schema.DDL unescapes its parameters
+#         sqlalchemy.schema.DDL("create view %(name)s as %(select)s" %
+#                               {'name': self.name,
+#                                'select': select},
+#                               context=params).execute(bind)
                               
     def drop(self, event, metadata, bind):
-        bind.execute(sqlalchemy.schema.DDL("drop view %(name)s" %
-                                           {'name': self.name}))
+        bind.execute("drop view %(name)s" %
+                     {'name': self.name})
+
+        # FIXME: sqlalchemy.schema.DDL unescapes its parameters
+#         sqlalchemy.schema.DDL("drop view %(name)s" %
+#                               {'name': self.name}).execute(bind)
 
 class ViewEntityMeta(type):
     def __init__(self, name, bases, members):
@@ -70,7 +79,7 @@ class ViewEntityMeta(type):
 
         if bases != (object,):
             self.table = View(
-                ("%s_%s" % (self.__module__, self.__name__)).lower(),
+                ("%s_%s" % (self.__module__, self.__name__)).replace('.', '_').lower(),
                 elixir.metadata,
                 self.expression,
                 self.primary_key,
