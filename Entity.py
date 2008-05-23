@@ -33,17 +33,43 @@ import sqlalchemy, sqlalchemy.sql, sqlalchemy.orm, elixir
 True_ = sqlalchemy.sql.text("(1 = 1)")
 False_ = sqlalchemy.sql.text("(1 = 2)")
 
-class View(sqlalchemy.sql.expression.TableClause, sqlalchemy.schema.SchemaItem):
+class View(sqlalchemy.schema.SchemaItem, sqlalchemy.sql.expression.TableClause):
     __visit_name__ = 'table'
 
-    def __init__(self, name, metadata, expression, primary_key = 'id', **kw):
-        self._expression = expression
+    def __init__(self, name, metadata, expression, primary_key = None, **kw):
+        super(View, self).__init__(name, **kw)
         metadata.append_ddl_listener('after-create', self.create)
         metadata.append_ddl_listener('before-drop', self.drop)
-        sqlalchemy.sql.expression.TableClause.__init__(self, name, *self._expression.columns, **kw)
-        if isinstance(primary_key, str):
-            primary_key = sqlalchemy.sql.expression.ColumnCollection(self._expression.columns[primary_key])
-	self._primary_key = primary_key
+        self.metadata = metadata
+        
+        self._expression = expression
+
+        attributes_to_copy = ("nullable",
+                              "default",
+                              "_is_oid",
+                              "index",
+                              "unique",
+                              "autoincrement",
+                              "quote")
+        if primary_key is None:
+            attributes_to_copy += ('primary_key')
+
+        for key in  self._expression.columns.keys():
+            column = self._expression.columns[key]
+            copy = sqlalchemy.schema.Column(key,
+                                            column.type,
+                                            *(  [constraint.copy() for constraint in column.constraints]
+                                                + [foreign_key.copy() for foreign_key in column.foreign_keys]),
+                                            **dict([(col_name, getattr(column, col_name))
+                                                    for col_name in attributes_to_copy]))
+            copy._set_parent(self)
+
+        if primary_key is not None:
+            if not isinstance(primary_key, (str, unicode)):
+                # Get the name of the primary key column obect
+                primary_key = primary_key.comparator.prop.key
+            self.columns[primary_key].primary_key = True
+            self._primary_key = sqlalchemy.sql.expression.ColumnCollection(self.columns[primary_key])
 
     def create(self, event, metadata, bind):
         try:
