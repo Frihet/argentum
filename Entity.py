@@ -56,6 +56,9 @@ class View(sqlalchemy.schema.SchemaItem, sqlalchemy.sql.expression.TableClause):
 
         for key in  self._expression.columns.keys():
             column = self._expression.columns[key]
+            # Do not include column properties in the views
+            if not hasattr(column , 'constraints'):
+                continue
             copy = sqlalchemy.schema.Column(key,
                                             column.type,
                                             *(  [constraint.copy() for constraint in column.constraints]
@@ -80,8 +83,10 @@ class View(sqlalchemy.schema.SchemaItem, sqlalchemy.sql.expression.TableClause):
         select = self._expression.compile(bind = bind)
         params = select.construct_params()
 
+        # Get preparer to quote table/view name
+        preparer = bind.dialect.preparer(bind.dialect)
         bind.execute("create view %(name)s as %(select)s" %
-                     {'name': self.name,
+                     {'name': preparer.format_table(self),
                       'select': select},
                      params)
 
@@ -92,8 +97,10 @@ class View(sqlalchemy.schema.SchemaItem, sqlalchemy.sql.expression.TableClause):
 #                               context=params).execute(bind)
                               
     def drop(self, event, metadata, bind):
+        # Get preparer to quote table/view name
+        preparer = bind.dialect.preparer(bind.dialect)
         bind.execute("drop view %(name)s" %
-                     {'name': self.name})
+                     {'name': preparer.format_table(self)})
 
         # FIXME: sqlalchemy.schema.DDL unescapes its parameters
 #         sqlalchemy.schema.DDL("drop view %(name)s" %
