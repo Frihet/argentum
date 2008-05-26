@@ -28,7 +28,9 @@
 # there.
 
 
-import sqlalchemy, sqlalchemy.sql, sqlalchemy.orm, elixir
+import sqlalchemy, sqlalchemy.sql, sqlalchemy.orm, elixir, re
+
+# FIXME: Test the following w Oracle and others: sqlalchemy.literal(1) == sqlalchemy.literal(1)
 
 if False: # PostgreSQL
     True_ = sqlalchemy.sql.text("(1 == 1)")
@@ -89,6 +91,22 @@ class View(sqlalchemy.schema.SchemaItem, sqlalchemy.sql.expression.TableClause):
 
         # Get preparer to quote table/view name
         preparer = bind.dialect.preparer(bind.dialect)
+
+        #### fixme ###
+        # name = "Workaround for Oracles broken create view"
+        # description = """The Oracle client lib crashes on create
+        # view parameters, so format them in by hand. Sadly, we have
+        # no proper way to quote them, esp. not in a database agnostic
+        # way."""
+        #### end ####
+        findparams1 = re.compile(r""":([a-zA-Z_0-9]*)""")
+        findparams2 = re.compile(r""":({[^}]*})""")
+        select = findparams1.sub(r"'%(\1)s'",
+                                 findparams2.sub(r"'%(\1)s'",
+                                                 str(select))) % params
+        params = {}
+
+        
         bind.execute("create view %(name)s as %(select)s" %
                      {'name': preparer.format_table(self),
                       'select': select},
