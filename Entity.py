@@ -30,8 +30,12 @@
 
 import sqlalchemy, sqlalchemy.sql, sqlalchemy.orm, elixir
 
-True_ = sqlalchemy.sql.text("(1 = 1)")
-False_ = sqlalchemy.sql.text("(1 = 2)")
+if False: # PostgreSQL
+    True_ = sqlalchemy.sql.text("(1 == 1)")
+    False_ = sqlalchemy.sql.text("(1 == 2)")
+else:
+    True_ = sqlalchemy.sql.text("1")
+    False_ = sqlalchemy.sql.text("0")
 
 class View(sqlalchemy.schema.SchemaItem, sqlalchemy.sql.expression.TableClause):
     __visit_name__ = 'table'
@@ -125,3 +129,10 @@ class ViewEntity(object):
     primary_key = 'id'
     clause_arguments = {}
     
+relarg = {}    
+relarg_many_to_one = {'use_alter': True}
+
+def ManyToOne(*arg, **kwarg):
+    kwarg.update(relarg)
+    kwarg.update(relarg_many_to_one)
+    return elixir.ManyToOne(*arg, **kwarg)
