@@ -33,11 +33,15 @@ import sqlalchemy, sqlalchemy.sql, sqlalchemy.orm, elixir, re
 # FIXME: Test the following w Oracle and others: sqlalchemy.literal(1) == sqlalchemy.literal(1)
 
 if False: # PostgreSQL
-    True_ = sqlalchemy.sql.text("(1 == 1)")
-    False_ = sqlalchemy.sql.text("(1 == 2)")
+    True_ = sqlalchemy.sql.text("(1 = 1)")
+    False_ = sqlalchemy.sql.text("(1 = 2)")
 else:
     True_ = sqlalchemy.sql.text("1")
     False_ = sqlalchemy.sql.text("0")
+
+# Used in where statements
+TrueWhere = sqlalchemy.sql.text("(1 = 1)")
+FalseWhere = sqlalchemy.sql.text("(1 = 2)")
 
 class View(sqlalchemy.schema.SchemaItem, sqlalchemy.sql.expression.TableClause):
     __visit_name__ = 'table'
