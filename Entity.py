@@ -143,8 +143,21 @@ class ViewEntity(object):
     
 relarg = {}    
 relarg_many_to_one = {'use_alter': True}
+relarg_one_to_many = {}
+relarg_many_to_many = {}
+
 
 def ManyToOne(*arg, **kwarg):
     kwarg.update(relarg)
     kwarg.update(relarg_many_to_one)
     return elixir.ManyToOne(*arg, **kwarg)
+
+def OneToMany(*arg, **kwarg):
+    kwarg.update(relarg)
+    kwarg.update(relarg_one_to_many)
+    return elixir.OneToMany(*arg, **kwarg)
+
+def ManyToMany(*arg, **kwarg):
+    kwarg.update(relarg)
+    kwarg.update(relarg_many_to_many)
+    return elixir.ManyToMany(*arg, **kwarg)
