@@ -1,10 +1,9 @@
 #! /usr/bin/env python2.5
 
 from __future__ import with_statement
+import sys
 
-import sqlalchemy, sqlalchemy.orm, elixir, sys
-
-
+#  Parse options
 kws = dict([arg[2:].split('=', 1)
             for arg in sys.argv[1:]
             if arg.startswith('--') and '=' in arg])
@@ -22,7 +21,7 @@ if 'model' in kws:
         model = getattr(model, item)
 else:
     options.add('help')
-    
+
 if 'help' in options:
     print """Usage: SetupDatabase.py --model=ORM.Model.Python.Module.Path OPTIONS
     Where OPTIONS are
@@ -33,7 +32,9 @@ if 'help' in options:
         --schema
             Create all tables and views
         --data
-            Insert initial data into tables"""
+            Insert initial data into tables
+        --sqllogging
+            Print DDL statements"""
     if model is None:
         print """        Other model specific arguments"""
     else:
@@ -41,6 +42,13 @@ if 'help' in options:
             print """        --%s
             %s""" % (key, value)
     sys.exit(0)
+
+if "sqllogging" in options:
+    import logging
+    logging.basicConfig()
+    logging.getLogger('sqlalchemy.engine').setLevel(logging.INFO)
+
+import sqlalchemy, sqlalchemy.orm, elixir
 
 if 'drop' in options:
     print "DROPPING ALL TABLES"
