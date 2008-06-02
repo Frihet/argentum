@@ -33,6 +33,9 @@ import sqlalchemy, sqlalchemy.sql, sqlalchemy.orm, elixir, re
 True_ = sqlalchemy.sql.literal(1) == sqlalchemy.sql.literal(1)
 False_ = sqlalchemy.sql.literal(1) == sqlalchemy.sql.literal(2)
 
+TrueWhere = True_ = sqlalchemy.sql.literal(1) == sqlalchemy.sql.literal(1)
+FalseWhere = False_ = sqlalchemy.sql.literal(1) == sqlalchemy.sql.literal(2)
+
 class View(sqlalchemy.schema.SchemaItem, sqlalchemy.sql.expression.TableClause):
     __visit_name__ = 'table'
 
@@ -100,7 +103,6 @@ class View(sqlalchemy.schema.SchemaItem, sqlalchemy.sql.expression.TableClause):
                                                  str(select))) % params
         params = {}
 
-        
         bind.execute("create view %(name)s as %(select)s" %
                      {'name': preparer.format_table(self),
                       'select': select},
@@ -146,7 +148,6 @@ relarg_many_to_one = {'use_alter': True}
 relarg_one_to_many = {}
 relarg_many_to_many = {}
 
-
 def ManyToOne(*arg, **kwarg):
     kwarg.update(relarg)
     kwarg.update(relarg_many_to_one)
@@ -161,3 +162,43 @@ def ManyToMany(*arg, **kwarg):
     kwarg.update(relarg)
     kwarg.update(relarg_many_to_many)
     return elixir.ManyToMany(*arg, **kwarg)
+
+
+relarg_many_belongs_to_one = {'cascade': 'save-update, merge, expunge, refresh-expire'}
+relarg_one_has_many_parts = {'cascade': 'delete-orphan, delete, save-update, merge, expunge, refresh-expire'}
+
+def ManyBelongsToOne(*arg, **kwarg):
+    kwarg.update(relarg)
+    kwarg.update(relarg_many_to_one)
+    kwarg.update(relarg_many_belongs_to_one)
+    return elixir.ManyToOne(*arg, **kwarg)
+
+def OneHasManyParts(*arg, **kwarg):
+    kwarg.update(relarg)
+    kwarg.update(relarg_one_to_many)
+    kwarg.update(relarg_one_has_many_parts)
+    return elixir.OneToMany(*arg, **kwarg)
+
+
+relarg_one_groups_many = {'cascade': 'save-update, merge, expunge, refresh-expire'}
+relarg_many_grouped_by_one = {'cascade': 'save-update, merge, expunge, refresh-expire'}
+relarg_many_groups_many = {'cascade': 'save-update, merge, expunge, refresh-expire'}
+
+def OneGroupsMany(*arg, **kwarg):
+    kwarg.update(relarg)
+    kwarg.update(relarg_one_to_many)
+    kwarg.update(relarg_one_groups_many)
+    return elixir.OneToMany(*arg, **kwarg)
+
+def ManyGroupedByOne(*arg, **kwarg):
+    kwarg.update(relarg)
+    kwarg.update(relarg_many_to_one)
+    kwarg.update(relarg_many_grouped_by_one)
+    return elixir.ManyToOne(*arg, **kwarg)
+
+def ManyGroupsMany(*arg, **kwarg):
+    kwarg.update(relarg)
+    kwarg.update(relarg_many_to_many)
+    kwarg.update(relarg_many_groups_many)
+    return elixir.ManyToMany(*arg, **kwarg)
+
