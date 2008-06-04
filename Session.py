@@ -53,16 +53,30 @@ def create_engine(url):
 
             def save(self, obj):
                 BaseSession.save(self, obj)
-                return  obj
+                return obj
                 
-            def expire(self, obj):
-                BaseSession.expire(self, obj)
-                return  obj
+            def expire(self, obj = None, attrs = None):
+                if obj is not None:
+                    if self.autoflush:
+                        self.flush(obj)
+                    if attrs is not None:
+                        BaseSession.expire(self, obj, attrs)
+                    else:
+                        BaseSession.expire(self, obj)
+                    return obj
+                if self.autoflush:
+                    self.flush()
+                for obj in self.identity_map.values():
+                    self.expire(obj)
+                return None
                 
-            def save_and_expire(self, obj):
-                self.save(obj)
-                self.flush()
-                return self.expire(obj)
+            def save_and_expire(self, obj = None):
+                if obj:
+                    self.save(obj)
+                    self.flush()
+                    return self.expire(obj)
+                for obj in self.identity_map.values():
+                    self.save_and_expire(obj)
 
             def load_from_session(self, obj):
                 #### fixme ####
@@ -75,7 +89,7 @@ def create_engine(url):
                 #### end ####
                 t = type(obj)
                 return self.query(t).filter(t.id == obj.id)[0]
-            
+
         return Session
     engine.sessions = sessions
     engine.Session = sessions()
