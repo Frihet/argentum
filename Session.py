@@ -51,34 +51,38 @@ def create_engine(url):
                     self.rollback()
                 self.close()
 
-            def save(self, obj):
-                BaseSession.save(self, obj)
-                return obj
+            def save(self, instance, *arg, **kw):
+                BaseSession.save(self, instance, *arg, **kw)
+                return instance
                 
-            def expire(self, obj = None, attrs = None):
-                if obj is not None:
+            def save_or_update(self, instance, *arg, **kw):
+                BaseSession.save_or_update(self, instance, *arg, **kw)
+                return instance
+                
+            def expire(self, instance = None, attrs = None):
+                if instance is not None:
                     if self.autoflush:
-                        self.flush(obj)
+                        self.flush(instance)
                     if attrs is not None:
-                        BaseSession.expire(self, obj, attrs)
+                        BaseSession.expire(self, instance, attrs)
                     else:
-                        BaseSession.expire(self, obj)
-                    return obj
+                        BaseSession.expire(self, instance)
+                    return instance
                 if self.autoflush:
                     self.flush()
-                for obj in self.identity_map.values():
-                    self.expire(obj)
+                for instance in self.identity_map.values():
+                    self.expire(instance)
                 return None
                 
-            def save_and_expire(self, obj = None):
-                if obj:
-                    self.save(obj)
+            def save_and_expire(self, instance = None, *arg, **kw):
+                if instance:
+                    self.save(instance, *arg, **kw)
                     self.flush()
-                    return self.expire(obj)
-                for obj in self.identity_map.values():
-                    self.save_and_expire(obj)
+                    return self.expire(instance, *arg, **kw)
+                for instance in self.identity_map.values():
+                    self.save_and_expire(instance, *arg, **kw)
 
-            def load_from_session(self, obj):
+            def load_from_session(self, instance):
                 #### fixme ####
                 # name = """SQLAlchemy: merge clashes with
                 # many-to-many"""
@@ -87,8 +91,8 @@ def create_engine(url):
                 # relationships!!! So when no fields are changed, at
                 # least you can do this instead..."""
                 #### end ####
-                t = type(obj)
-                return self.query(t).filter(t.id == obj.id)[0]
+                t = type(instance)
+                return self.query(t).filter(t.id == instance.id)[0]
 
         return Session
     engine.sessions = sessions
