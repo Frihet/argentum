@@ -58,16 +58,19 @@ class View(sqlalchemy.schema.SchemaItem, sqlalchemy.sql.expression.TableClause):
             attributes_to_copy += ('primary_key')
 
         for key in  self._expression.columns.keys():
+            # FIXME: How should this be handled in the real world?
             column = self._expression.columns[key]
-            # Do not include column properties in the views
-            if not hasattr(column , 'constraints'):
-                continue
+
+            constraints = []
+            if hasattr(column , 'constraints'):
+                constraints = [constraint.copy() for constraint in column.constraints]
+
             copy = sqlalchemy.schema.Column(key,
                                             column.type,
-                                            *(  [constraint.copy() for constraint in column.constraints]
+                                            *(  constraints
                                                 + [foreign_key.copy() for foreign_key in column.foreign_keys]),
                                             **dict([(col_name, getattr(column, col_name))
-                                                    for col_name in attributes_to_copy]))
+                                                    for col_name in attributes_to_copy if hasattr(column, col_name)]))
             copy._set_parent(self)
 
         if primary_key is not None:
@@ -134,14 +137,21 @@ class ViewEntityMeta(type):
                 elixir.metadata,
                 self.expression,
                 self.primary_key,
-                **self.clause_arguments)
+                **self.get_clause_arguments())
 
-            sqlalchemy.orm.mapper(self, self.table)
+            sqlalchemy.orm.mapper(self, self.table, properties=self.get_relation_arguments())
 
 class ViewEntity(object):
     __metaclass__ = ViewEntityMeta
     primary_key = 'id'
-    clause_arguments = {}
+
+    @classmethod
+    def get_clause_arguments(cls):
+        return {}
+
+    @classmethod
+    def get_relation_arguments(cls):
+        return {}
     
 relarg = {}    
 relarg_many_to_one = {'use_alter': True}
