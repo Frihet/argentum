@@ -39,7 +39,7 @@ FalseWhere = False_ = sqlalchemy.sql.literal(1) == sqlalchemy.sql.literal(2)
 class View(sqlalchemy.schema.SchemaItem, sqlalchemy.sql.expression.TableClause):
     __visit_name__ = 'table'
 
-    def __init__(self, name, metadata, expression, primary_key = None, **kw):
+    def __init__(self, name, metadata, expression, primary_key = None, column_args = {}, column_kws = {}, **kw):
         super(View, self).__init__(name, **kw)
         metadata.append_ddl_listener('after-create', self.create)
         metadata.append_ddl_listener('before-drop', self.drop)
@@ -61,16 +61,31 @@ class View(sqlalchemy.schema.SchemaItem, sqlalchemy.sql.expression.TableClause):
             # FIXME: How should this be handled in the real world?
             column = self._expression.columns[key]
 
-            constraints = []
+            args = []
             if hasattr(column , 'constraints'):
-                constraints = [constraint.copy() for constraint in column.constraints]
+                args = [constraint.copy() for constraint in column.constraints]
+            args.extend(
+                (foreign_key.copy()
+                 for foreign_key
+                 in column.foreign_keys))
+
+            if key in column_args:
+                if isinstance(column_args[key], (list, tuple)):
+                    args.extend(column_args[key])
+                else:
+                    args.append(column_args[key])
+                
+            kws = dict(
+                ((col_name, getattr(column, col_name))
+                 for col_name in attributes_to_copy if hasattr(column, col_name)))
+            
+            if key in column_kws:
+                kws.update(column_kws[key])
 
             copy = sqlalchemy.schema.Column(key,
                                             column.type,
-                                            *(  constraints
-                                                + [foreign_key.copy() for foreign_key in column.foreign_keys]),
-                                            **dict([(col_name, getattr(column, col_name))
-                                                    for col_name in attributes_to_copy if hasattr(column, col_name)]))
+                                            *args,
+                                            **kws)
             copy._set_parent(self)
 
         if primary_key is not None:
@@ -137,6 +152,8 @@ class ViewEntityMeta(type):
                 elixir.metadata,
                 self.expression,
                 self.primary_key,
+                self.column_args,
+                self.column_kws,
                 **self.get_clause_arguments())
 
             sqlalchemy.orm.mapper(self, self.table, properties=self.get_relation_arguments())
@@ -144,6 +161,8 @@ class ViewEntityMeta(type):
 class ViewEntity(object):
     __metaclass__ = ViewEntityMeta
     primary_key = 'id'
+    column_args = {}
+    column_kws = {}
 
     @classmethod
     def get_clause_arguments(cls):
