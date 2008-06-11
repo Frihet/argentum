@@ -85,12 +85,16 @@ class BaseModel(object):
         return cls_member.impl.callable_.im_self.mapper.class_
     get_column_foreign_class = classmethod(get_column_foreign_class)
 
-    def get_column_foreign_column(cls, name):
+    def get_column_foreign_column(cls, name, return_none_for_none = False):
         cls_member = getattr(cls, name)
         for ext in cls_member.impl.extensions:
             if isinstance(ext, sqlalchemy.orm.attributes.GenericBackrefExtension):
                 return ext.key
-        raise Exception("Column does not have a back-ref column in foreign table")
+        if return_none_for_none: return None
+        foreign_cls = cls.get_column_foreign_class(name)
+        raise Exception("Column %s of class %s.%s does not have a back-ref column in foreign class %s.%s" % (name,
+                                                                                                             cls.__module__, cls.__name__,
+                                                                                                             foreign_cls.__module__, foreign_cls.__name__))
     get_column_foreign_column = classmethod(get_column_foreign_column)
 
     def copy(self, override = {}, copy_foreign = True):
@@ -101,32 +105,25 @@ class BaseModel(object):
                 res[name] = override[name]
             else:
                 if self.column_is_foreign(name):
-                    foreign_name = self.get_column_foreign_column(name)
+                    foreign_name = self.get_column_foreign_column(name, return_none_for_none = True)
                     if self.column_is_scalar(name):
-                        res[name] = value
-                        if getattr(self, name + '__ww_copy_foregin', False):
-                            if copy_foreign:
-                                foreign_col = list(getattr(value, foreign_name))
-                                foreign_col.remove(self)
-                                res[name] = value.copy(override = {foreign_name:foreign_col})
+                        if foreign_name and value.column_is_scalar(foreign_name):
+                            if getattr(self, name + '__ww_copy_foregin', False) and copy_foreign:
+                                res[name] = value.copy(override = {foreign_name:None})
                                 if hasattr(value, "is_current"):
                                     value.is_current = False
+                        else:
+                            res[name] = value
                     else:
                         res[name] = []
-                        if self.get_column_foreign_class(name).column_is_scalar(foreign_name):
-                            if copy_foreign:
+                        if foreign_name and value.column_is_scalar(foreign_name):
+                            if getattr(self, name + '__ww_copy_foregin', False) and copy_foreign:
                                 for foreign in value:
                                     res[name].append(foreign.copy(override = {foreign_name:None}))
                                     if hasattr(foreign, "is_current"):
                                         foreign.is_current = False
-                        elif getattr(self, name + '__ww_copy_foregin', False):
-                            if copy_foreign:
-                                for foreign in value:
-                                    foreign_col = list(getattr(foreign, foreign_name))
-                                    foreign_col.remove(self)
-                                    res[name].append(foreign.copy(override = {foreign_name:foreign_col}))
-                                    if hasattr(foreign, "is_current"):
-                                        foreign.is_current = False
+                        else:
+                            res[name].extend(value)
                 else:
                     res[name] = value
         return type(self)(**res)
