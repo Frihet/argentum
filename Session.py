@@ -62,7 +62,7 @@ def create_engine(url):
             def expire(self, instance = None, attrs = None):
                 if instance is not None:
                     if self.autoflush:
-                        self.flush(instance)
+                        self.flush([instance])
                     if attrs is not None:
                         BaseSession.expire(self, instance, attrs)
                     else:
