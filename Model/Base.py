@@ -1,5 +1,7 @@
 import sqlalchemy
 
+debug_copy = False
+
 class BaseModel(object):
     """This class extends SQLAlchemy models with some extra utility
     methods, and provides widgets for editing the database fields of
@@ -97,7 +99,9 @@ class BaseModel(object):
                                                                                                              foreign_cls.__module__, foreign_cls.__name__))
     get_column_foreign_column = classmethod(get_column_foreign_column)
 
-    def copy(self, override = {}, copy_foreign = True):
+    def copy(self, override = {}, copy_foreign = True, indent = ''):
+        if debug_copy:
+            print "%sCOPY %s.%s @ %s" % (indent, type(self).__module__, type(self).__name__, self.id)
         res = {}
         for name, value in self.get_column_instances(exclude_primary_keys = True,
                                                      exclude_foreign_keys = True):
@@ -107,23 +111,23 @@ class BaseModel(object):
                 if self.column_is_foreign(name):
                     foreign_name = self.get_column_foreign_column(name, return_none_for_none = True)
                     if self.column_is_scalar(name):
-                        if foreign_name and value.column_is_scalar(foreign_name):
+                        if foreign_name and self.get_column_foreign_class(name).column_is_scalar(foreign_name):
                             if getattr(self, name + '__ww_copy_foregin', False) and copy_foreign:
-                                res[name] = value.copy(override = {foreign_name:None})
+                                res[name] = value.copy(override = {foreign_name:None}, indent = indent + '  ')
                                 if hasattr(value, "is_current"):
                                     value.is_current = False
                         else:
                             res[name] = value
                     else:
                         res[name] = []
-                        if foreign_name and value.column_is_scalar(foreign_name):
+                        if foreign_name and self.get_column_foreign_class(name).column_is_scalar(foreign_name):
                             if getattr(self, name + '__ww_copy_foregin', False) and copy_foreign:
                                 for foreign in value:
-                                    res[name].append(foreign.copy(override = {foreign_name:None}))
-                                    if hasattr(foreign, "is_current"):
-                                        foreign.is_current = False
+                                    res[name].append(foreign.copy(override = {foreign_name:None}, indent = indent + '  '))
                         else:
                             res[name].extend(value)
                 else:
                     res[name] = value
+        if hasattr(self, "is_current"):
+            self.is_current = False
         return type(self)(**res)
