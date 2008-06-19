@@ -98,6 +98,14 @@ class BaseModel(object):
                                                                                                              cls.__module__, cls.__name__,
                                                                                                              foreign_cls.__module__, foreign_cls.__name__))
     get_column_foreign_column = classmethod(get_column_foreign_column)
+    
+    def get_column_foreign_keys(cls, name):
+        return getattr(cls, name).impl.callable_.im_self.foreign_keys
+    get_column_foreign_keys = classmethod(get_column_foreign_keys)
+    
+    def get_column_primary_join(cls, name):
+        return getattr(cls, name).impl.callable_.im_self.primaryjoin
+    get_column_primary_join = classmethod(get_column_primary_join)
 
     def copy(self, override = {}, copy_foreign = True, indent = ''):
         if debug_copy:
