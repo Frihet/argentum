@@ -1,7 +1,7 @@
 #! /usr/bin/env python2.5
 
 from __future__ import with_statement
-import sys
+import sys, Argentum
 
 #  Parse options
 kws = dict([arg[2:].split('=', 1)
@@ -31,6 +31,7 @@ if 'help' in options:
             Equivalent to --schema and --data
         --schema
             Create all tables and views
+        --views
         --data
             Insert initial data into tables
         --sqllogging
@@ -58,6 +59,14 @@ if 'schema' in options or 'all' in options:
     print "CREATING TABLES"
     elixir.create_all(bind=model.engine)
 
+if 'views' in options:
+    print "(RE)CREATING VIEWS"
+    with model.engine.Session() as session:
+        for view_method in elixir.metadata.ddl_listeners['after-create']:
+            view = view_method.im_self
+            if isinstance(view, Argentum.View):
+                view_method(None, elixir.metadata, session.bind)
+    
 if 'data' in options or 'all' in options:
     print "INSERTING ORIGINAL DATA"
     with model.engine.Session() as session:

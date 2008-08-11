@@ -91,6 +91,7 @@ def visit(obj, done = set(), indent = ''):
         foreign.sort()
 
         extra = ""
+
         if 'compact' in options and id(obj) in done:
             extra = " Reoccured: See above for details"
         else:
