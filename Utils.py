@@ -20,7 +20,7 @@
 # Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
 # USA
 
-import sqlalchemy
+import sqlalchemy, operator
 
 def group_by_list(expr, *cols):
     """
@@ -47,3 +47,13 @@ def select_list(cols, *lst):
                               for pos in xrange(0, len(cols))])
            for row in lst]
     return sqlalchemy.union(*res)
+
+def interleave(op, sep):
+    def interleave(a, b):
+        return op(op(a, sep), b)
+    return interleave
+
+def compound_id(*id_cols):
+    return reduce(interleave(operator.add, "|"),
+                  (sqlalchemy.cast(col, sqlalchemy.Unicode(255))
+                   for col in id_cols))
