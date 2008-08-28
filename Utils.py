@@ -20,8 +20,30 @@
 # Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
 # USA
 
-if __name__ == "Argentum":
-    from Session import *
-    from Entity import *
-    from Model.Base import *
-    from Utils import *
+import sqlalchemy
+
+def group_by_list(expr, *cols):
+    """
+    Applies all group_by for all columns in cols on expr.
+
+    @param expr SQL Expression.
+    @param *cols SQL Expression columns to group by.
+    @return Grouped by SQL Expression.
+    """
+    for col in cols:
+        expr = expr.group_by(col)
+    return expr
+
+def select_list(cols, *lst):
+    """
+    Construct union select.
+
+    @param cols (name, type) list that select returns.
+    @param *lst list of lists containing values for cols.
+    @return Union SQL Expression.
+    """
+
+    res = [sqlalchemy.select([sqlalchemy.cast(sqlalchemy.literal(row[pos]), cols[pos][1]).label(cols[pos][0])
+                              for pos in xrange(0, len(cols))])
+           for row in lst]
+    return sqlalchemy.union(*res)
