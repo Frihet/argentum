@@ -151,9 +151,9 @@ class ViewEntityMeta(type):
                 ("%s_%s" % (self.__module__, self.__name__)).replace('.', '_').lower(),
                 elixir.metadata,
                 self.expression,
-                self.primary_key,
-                self.column_args,
-                self.column_kws,
+                self.get_primary_key(),
+                self.get_column_args(),
+                self.get_column_kws(),
                 **self.get_clause_arguments())
 
             sqlalchemy.orm.mapper(self, self.table, properties=self.get_relation_arguments())
@@ -163,6 +163,18 @@ class ViewEntity(object):
     primary_key = 'id'
     column_args = {}
     column_kws = {}
+
+    @classmethod
+    def get_primary_key(cls):
+        return cls.primary_key
+
+    @classmethod
+    def get_column_args(cls):
+        return cls.column_args
+
+    @classmethod
+    def get_column_kws(cls):
+        return cls.column_kws
 
     @classmethod
     def get_clause_arguments(cls):
