@@ -48,6 +48,7 @@ if "sqllogging" in options:
     import logging
     logging.basicConfig()
     logging.getLogger('sqlalchemy.engine').setLevel(logging.INFO)
+    logging.getLogger('sqlalchemy.sql.compiler.IdentifierPreparer').setLevel(logging.INFO)
 
 import sqlalchemy, sqlalchemy.orm, elixir
 
