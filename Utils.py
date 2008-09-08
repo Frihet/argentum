@@ -54,6 +54,23 @@ def interleave(op, sep):
     return interleave
 
 def compound_id(*id_cols):
-    return reduce(interleave(operator.add, "|"),
+    return reduce(interleave(operator.add, sqlalchemy.literal("|")),
                   (sqlalchemy.cast(col, sqlalchemy.Unicode(255))
                    for col in id_cols))
+
+
+def join(table, *clauses):
+    for clause in clauses:
+        if isinstance(clause, (list, tuple)):
+            table = table.join(*clause)
+        else:
+            table = table.join(clause)
+    return table
+
+def outerjoin(table, *clauses):
+    for clause in clauses:
+        if isinstance(clause, (list, tuple)):
+            table = table.outerjoin(*clause)
+        else:
+            table = table.outerjoin(clause)
+    return table
