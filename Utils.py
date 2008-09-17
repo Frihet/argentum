@@ -59,18 +59,78 @@ def compound_id(*id_cols):
                    for col in id_cols))
 
 
-def join(table, *clauses):
+def abstract_join(method, table, *clauses):
     for clause in clauses:
         if isinstance(clause, (list, tuple)):
-            table = table.join(*clause)
+            join_table = clause[0]
+            clause = clause[1:]
+            if len(clause) > 1:
+                clause = [sqlalchemy.and_(*clause)]
+            table = getattr(table, method)(join_table, clause[0])
         else:
-            table = table.join(clause)
+            table = getattr(table, method)(clause)
     return table
 
+
+def join(table, *clauses):
+    return abstract_join("join", table, *clauses)
+
 def outerjoin(table, *clauses):
-    for clause in clauses:
-        if isinstance(clause, (list, tuple)):
-            table = table.outerjoin(*clause)
-        else:
-            table = table.outerjoin(clause)
-    return table
+    return abstract_join("outerjoin", table, *clauses)
+
+def attributes_from_table(table, *attrs):
+    res = []
+    for attr in attrs:
+        label = None
+        if isinstance(attr, (list, tuple)):
+            (attr, label) = attr
+        attr = getattr(table.c, attr)
+        if label:
+            attr = attr.label(label)
+        res.append(attr)
+    return res
+
+
+
+def sum_view(module, cols, sum_output_cols, foreign_cols,
+             name, base_cls, id_cols, sum_cols, filter):
+    base_table = base_cls.table.alias()
+
+    filter = filter(base_table)
+
+    cols = (set(id_cols) | set(cols) | set(foreign_cols.keys())) - (set(sum_cols) | set(sum_output_cols))
+    
+    id_expr = compound_id(*[getattr(base_table.c, id_col) for id_col in id_cols])
+
+    expression = group_by_list(
+        sqlalchemy.select(
+            [id_expr.label('rowid_'),
+             id_expr.label('id')] +
+            [getattr(base_table.c, col)
+             for col in cols] +
+            [sqlalchemy.func.sum(getattr(base_table.c, col)).label(col)
+             for col in sum_output_cols],
+            *filter),
+        *[getattr(base_table.c, col)
+          for col in cols])
+
+    @classmethod
+    def get_column_args(cls):
+        return dict([(foreign_name, sqlalchemy.ForeignKey(foreign_cls.table.c.id))
+                     for (foreign_name, foreign_cls) in foreign_cols.iteritems()
+                     if foreign_name not in sum_cols])
+
+    @classmethod
+    def get_relation_arguments(cls):
+        return dict([(foreign_name[:-3],
+                      sqlalchemy.orm.relation(foreign_cls,
+                                              primaryjoin = getattr(cls.table.c, foreign_name) == foreign_cls.id))
+                     for (foreign_name, foreign_cls) in foreign_cols.iteritems()
+                     if foreign_name not in sum_cols])
+
+    res = type(name, (base_cls,), {'__module__': __name__,
+                                   'expression': expression,
+                                   'get_column_args': get_column_args,
+                                   'get_relation_arguments': get_relation_arguments})
+    setattr(module, name, res)
+    return res
