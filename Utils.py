@@ -92,14 +92,11 @@ def attributes_from_table(table, *attrs):
 
 
 
-def sum_view(module, cols, sum_output_cols, foreign_cols,
-             name, base_cls, id_cols, sum_cols, filter, members):
+def sum_view(module, name, base_cls, id_cols, sum_output_cols, sum_cols, filter):
     base_table = base_cls.table.alias()
-
-    filter = filter(base_table)
-
-    cols = (set(id_cols) | set(cols) | set(foreign_cols.keys())) - (set(sum_cols) | set(sum_output_cols))
+    base_cols = base_table.c.keys()
     
+    cols = set(base_cols) - (set(['id', 'rowid_']) | set(sum_cols) | set(sum_output_cols))
     id_expr = compound_id(*[getattr(base_table.c, id_col) for id_col in id_cols])
 
     expression = group_by_list(
@@ -110,19 +107,17 @@ def sum_view(module, cols, sum_output_cols, foreign_cols,
              for col in cols] +
             [sqlalchemy.func.sum(getattr(base_table.c, col)).label(col)
              for col in sum_output_cols],
-            *filter),
+            *filter(base_table)),
         *[getattr(base_table.c, col)
           for col in cols])
 
-    members = dict(members)
+    members = {}
     members['__module__'] = module.__name__
     members['expression'] = expression
 
-    for (foreign_name, foreign_cls) in foreign_cols.iteritems():
-        col_descr = None
-        if foreign_name not in sum_cols:
-            col_descr = elixir.ManyToOne(foreign_cls)
-        members[foreign_name[:-3]] = col_descr
+    # Handle foreign keys
+    for sum_col in sum_cols:
+        members[sum_col[:-3]] = None
 
     res = type(name, (base_cls,), members)
     setattr(module, name, res)
