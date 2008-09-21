@@ -154,15 +154,18 @@ class ViewEntityMeta(type):
                 self.get_primary_key(),
                 self.get_column_args(),
                 self.get_column_kws(),
-                **self.get_clause_arguments())
+                **self.get_clause_args())
 
-            sqlalchemy.orm.mapper(self, self.table, properties=self.get_relation_arguments())
+            print "XXXX", self
+            sqlalchemy.orm.mapper(self, self.table, properties=self.get_relation_args())
 
 class ViewEntity(object):
     __metaclass__ = ViewEntityMeta
     primary_key = 'id'
-    column_args = {}
-    column_kws = {}
+
+    @classmethod
+    def get_clause_args(cls):
+        return {}
 
     @classmethod
     def get_primary_key(cls):
@@ -170,19 +173,32 @@ class ViewEntity(object):
 
     @classmethod
     def get_column_args(cls):
-        return cls.column_args
+        res = {}
+        for col_name in dir(cls):
+            col = getattr(cls, col_name)
+            if isinstance(col, elixir.ManyToOne):
+                res[col_name] = sqlalchemy.ForeignKey(col.target.table.c.id)
+        return res
 
     @classmethod
     def get_column_kws(cls):
-        return cls.column_kws
-
-    @classmethod
-    def get_clause_arguments(cls):
+        #FIXME: Do something usefull here
         return {}
-
+    
     @classmethod
-    def get_relation_arguments(cls):
-        return {}
+    def get_relation_args(cls):
+        res = {}
+
+        for col_name in dir(cls):
+            col = getattr(cls, col_name)
+            if isinstance(col, elixir.ManyToOne):
+                res[col_name] = sqlalchemy.orm.relation(
+                    col.target,
+                    primaryjoin = getattr(cls.table.c, "%s_id" % col_name) == col.target.c.id)
+            elif isinstance(col, elixir.OneToMany):
+                res[col_name] = sqlalchemy.orm.relation(
+                    col.target,
+                    primaryjoin = cls.table.c.id == col.inverse)    
     
 relarg = {}    
 relarg_many_to_one = {'use_alter': True}

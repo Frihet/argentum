@@ -20,7 +20,7 @@
 # Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
 # USA
 
-import sqlalchemy, operator
+import sqlalchemy, operator, elixir
 
 def group_by_list(expr, *cols):
     """
@@ -93,7 +93,7 @@ def attributes_from_table(table, *attrs):
 
 
 def sum_view(module, cols, sum_output_cols, foreign_cols,
-             name, base_cls, id_cols, sum_cols, filter):
+             name, base_cls, id_cols, sum_cols, filter, members):
     base_table = base_cls.table.alias()
 
     filter = filter(base_table)
@@ -114,23 +114,16 @@ def sum_view(module, cols, sum_output_cols, foreign_cols,
         *[getattr(base_table.c, col)
           for col in cols])
 
-    @classmethod
-    def get_column_args(cls):
-        return dict([(foreign_name, sqlalchemy.ForeignKey(foreign_cls.table.c.id))
-                     for (foreign_name, foreign_cls) in foreign_cols.iteritems()
-                     if foreign_name not in sum_cols])
+    members = dict(members)
+    members['__module__'] = module.__name__
+    members['expression'] = expression
 
-    @classmethod
-    def get_relation_arguments(cls):
-        return dict([(foreign_name[:-3],
-                      sqlalchemy.orm.relation(foreign_cls,
-                                              primaryjoin = getattr(cls.table.c, foreign_name) == foreign_cls.id))
-                     for (foreign_name, foreign_cls) in foreign_cols.iteritems()
-                     if foreign_name not in sum_cols])
+    for (foreign_name, foreign_cls) in foreign_cols.iteritems():
+        col_descr = None
+        if foreign_name not in sum_cols:
+            col_descr = elixir.ManyToOne(foreign_cls)
+        members[foreign_name[:-3]] = col_descr
 
-    res = type(name, (base_cls,), {'__module__': __name__,
-                                   'expression': expression,
-                                   'get_column_args': get_column_args,
-                                   'get_relation_arguments': get_relation_arguments})
+    res = type(name, (base_cls,), members)
     setattr(module, name, res)
     return res
