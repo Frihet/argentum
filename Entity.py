@@ -142,64 +142,72 @@ class View(sqlalchemy.schema.SchemaItem, sqlalchemy.sql.expression.TableClause):
 #         sqlalchemy.schema.DDL("drop view %(name)s" %
 #                               {'name': self.name}).execute(bind)
 
+class StashedRelation(object):
+    def __init__(self, rel):
+        self.rel_type, self.target = type(rel), rel.target
+        self.inv_foreign_key = None
+        if isinstance(rel, elixir.OneToMany):
+            self.inv_foreign_key = rel.inverse.foreign_key
+
 class ViewEntityMeta(type):
     def __init__(self, name, bases, members):
         super(ViewEntityMeta, self).__init__(name, bases, members)
 
         if bases != (object,):
+
+            # Save all col-specs so mapper can't get at them...
+            for col_name in dir(self):
+                if not col_name.startswith('_argentum_'):
+                    col = getattr(self, col_name)
+                    stach_name = "_argentum_%s" % col_name
+                    if isinstance(col, elixir.relationships.Relationship):
+                        setattr(self, stach_name, StashedRelation(col))
+                    #Handle overrides (remove all attribute magic)
+                    elif (    hasattr(self, stach_name)
+                          and not isinstance(col, (sqlalchemy.orm.attributes.InstrumentedAttribute,
+                                                   sqlalchemy.sql.expression.Operators))):
+                        setattr(self, stach_name, "DEADBEEF")
+
+            columns = dict((name, value)
+                           for (name, value)
+                           in ((col_name[len('_argentum_'):],
+                                getattr(self, col_name))
+                               for col_name in dir(self)
+                               if col_name.startswith('_argentum_'))
+                           if isinstance(value, StashedRelation))
+
+            column_args = {}
+            for col_name, rel in columns.iteritems():
+                if rel.rel_type is elixir.ManyToOne:
+                    column_args["%s_id" % col_name] = sqlalchemy.ForeignKey(rel.target.table.c.id)
+                        
             self.table = View(
                 ("%s_%s" % (self.__module__, self.__name__)).replace('.', '_').lower(),
                 elixir.metadata,
                 self.expression,
-                self.get_primary_key(),
-                self.get_column_args(),
-                self.get_column_kws(),
-                **self.get_clause_args())
+                self.primary_key,
+                column_args,
+                {})
 
-            print "XXXX", self
-            sqlalchemy.orm.mapper(self, self.table, properties=self.get_relation_args())
+            relation_args = {}
+            for col_name, rel in columns.iteritems():
+                if rel.rel_type is elixir.ManyToOne:
+                    foreign_key = getattr(self.table.c, "%s_id" % col_name)
+                    relation_args[col_name] = sqlalchemy.orm.relation(
+                        rel.target,
+                        primaryjoin = foreign_key == rel.target.table.c.id)
+                elif rel.rel_type is elixir.OneToMany:
+                    relation_args[col_name] = sqlalchemy.orm.relation(
+                        rel.target,
+                        primaryjoin = self.table.c.id == rel.inv_foreign_key[0],
+                        foreign_keys = rel.inv_foreign_key)
+
+            sqlalchemy.orm.mapper(self, self.table, properties=relation_args)
 
 class ViewEntity(object):
     __metaclass__ = ViewEntityMeta
     primary_key = 'id'
 
-    @classmethod
-    def get_clause_args(cls):
-        return {}
-
-    @classmethod
-    def get_primary_key(cls):
-        return cls.primary_key
-
-    @classmethod
-    def get_column_args(cls):
-        res = {}
-        for col_name in dir(cls):
-            col = getattr(cls, col_name)
-            if isinstance(col, elixir.ManyToOne):
-                res[col_name] = sqlalchemy.ForeignKey(col.target.table.c.id)
-        return res
-
-    @classmethod
-    def get_column_kws(cls):
-        #FIXME: Do something usefull here
-        return {}
-    
-    @classmethod
-    def get_relation_args(cls):
-        res = {}
-
-        for col_name in dir(cls):
-            col = getattr(cls, col_name)
-            if isinstance(col, elixir.ManyToOne):
-                res[col_name] = sqlalchemy.orm.relation(
-                    col.target,
-                    primaryjoin = getattr(cls.table.c, "%s_id" % col_name) == col.target.c.id)
-            elif isinstance(col, elixir.OneToMany):
-                res[col_name] = sqlalchemy.orm.relation(
-                    col.target,
-                    primaryjoin = cls.table.c.id == col.inverse)    
-    
 relarg = {}    
 relarg_many_to_one = {'use_alter': True}
 relarg_one_to_many = {}
