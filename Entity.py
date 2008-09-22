@@ -147,11 +147,16 @@ class StashedRelation(object):
         self.rel_type, self.target = type(rel), rel.target
         self.inv_foreign_key = None
         if isinstance(rel, elixir.OneToMany):
-            self.inv_foreign_key = rel.inverse.foreign_key
+            # Don't use rel.inverse.foreign_key as we don't really
+            # have an inverse relation...
+            self.inv_foreign_key = getattr(self.target.table.c, "%s_id" % rel.inverse_name)
 
-class ViewEntityMeta(type):
+class ViewEntityMeta(elixir.EntityMeta, type):
+    # Note: we only inherit from elixir.EntityMeta since elixir
+    # doesn't really do duck-typing, so some relationships and stuff
+    # crashes if we don't. But we don't use any functionality from it.
     def __init__(self, name, bases, members):
-        super(ViewEntityMeta, self).__init__(name, bases, members)
+        type.__init__(self, name, bases, members)
 
         if bases != (object,):
 
@@ -199,14 +204,30 @@ class ViewEntityMeta(type):
                 elif rel.rel_type is elixir.OneToMany:
                     relation_args[col_name] = sqlalchemy.orm.relation(
                         rel.target,
-                        primaryjoin = self.table.c.id == rel.inv_foreign_key[0],
-                        foreign_keys = rel.inv_foreign_key)
+                        primaryjoin = self.table.c.id == rel.inv_foreign_key,
+                        foreign_keys = [rel.inv_foreign_key])
+
+            self._descriptor = self.Descriptor(self)
 
             sqlalchemy.orm.mapper(self, self.table, properties=relation_args)
+
+    # Override method from elixir.EntityMeta
+    def __call__(self, *arg, **kw):
+        return type.__call__(self, *arg, **kw)
 
 class ViewEntity(object):
     __metaclass__ = ViewEntityMeta
     primary_key = 'id'
+
+    class Descriptor(object):
+        # This is just to fool Elixir we're a table :)
+        
+        def __init__(self, view):
+            self.view = view
+            
+        def find_relationship(self, name):
+            return getattr(self.view, name)
+        
 
 relarg = {}    
 relarg_many_to_one = {'use_alter': True}
