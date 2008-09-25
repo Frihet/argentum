@@ -7,6 +7,13 @@ class BaseModel(object):
     methods, and provides widgets for editing the database fields of
     the model."""
 
+    def __init__(self, *arg, **kw):
+        super(BaseModel, self).__init__(*arg, **kw)
+        for col in dir(type(self)):
+            if col.endswith('__default'):
+                value_col = col[:-len('__default')]
+                setattr(self, value_col, getattr(self, col))
+
     def __unicode__(self):
         if hasattr(self, 'title'):
             return unicode(self.title)
