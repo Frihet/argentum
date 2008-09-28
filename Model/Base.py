@@ -76,6 +76,16 @@ class BaseModel(object):
                                             sqlalchemy.orm.attributes.CollectionAttributeImpl))
     column_is_foreign = classmethod(column_is_foreign)
 
+    def column_is_sortable(cls, name):
+        cls_member = getattr(cls, name, None)
+        if cls_member:
+            # FIXME: Implement way of figuring out if the column
+            # resides on the actual table or not.
+            return False
+        else:
+            return False
+    column_is_sortable = classmethod(column_is_sortable)
+
     def get_column_subtype(cls, name):
         cls_member = getattr(cls, name)
         # Yes, this sucks, it is icky, but it's the only way to get at it
