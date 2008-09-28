@@ -12,7 +12,10 @@ class BaseModel(object):
         for col in dir(type(self)):
             if col.endswith('__default'):
                 value_col = col[:-len('__default')]
-                setattr(self, value_col, getattr(self, col))
+                
+                # Only set default values if no values are provided.
+                if not getattr(self, value_col, None):
+                    setattr(self, value_col, getattr(self, col))
 
     def __unicode__(self):
         if hasattr(self, 'title'):
