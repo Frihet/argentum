@@ -28,10 +28,27 @@
 # there.
 
 
-import sqlalchemy, sqlalchemy.sql, sqlalchemy.orm
+import sqlalchemy, sqlalchemy.engine, sqlalchemy.exceptions
+import sqlalchemy.sql, sqlalchemy.orm, sqlalchemy.pool
 
 def create_engine(url):
-    engine = sqlalchemy.create_engine(url)
+    # Setup a connection pool. To get this working parsing of the URL
+    # to get the dialect -> dbapi to create a connect function.
+    url_parsed = sqlalchemy.engine.url.make_url(url)
+    dialect_cls = url_parsed.get_dialect()
+    dbapi = dialect_cls.dbapi()
+    dialect = dialect_cls(dbapi=dbapi)
+    (cargs, cparams) = dialect.create_connect_args(url_parsed)
+
+    def connect():
+        try:
+            return dbapi.connect(*cargs, **cparams)
+        except Exception, e:
+            raise sqlalchemy.exceptions.DBAPIError.instance(None, None, e)
+
+    pool = sqlalchemy.pool.QueuePool(connect, max_overflow=-1, timeout=15)
+
+    engine = sqlalchemy.create_engine(url, pool=pool)
     engine.session_arguments = {'autoflush': True,
                                 'transactional': True,
                                 }
