@@ -7,6 +7,16 @@ class BaseModel(object):
     methods, and provides widgets for editing the database fields of
     the model."""
 
+    def __init__(self, *arg, **kw):
+        super(BaseModel, self).__init__(*arg, **kw)
+        for col in dir(type(self)):
+            if col.endswith('__default'):
+                value_col = col[:-len('__default')]
+                
+                # Only set default values if no values are provided.
+                if not getattr(self, value_col, None):
+                    setattr(self, value_col, getattr(self, col))
+
     def __unicode__(self):
         if hasattr(self, 'title'):
             return unicode(self.title)
@@ -68,6 +78,16 @@ class BaseModel(object):
         return isinstance(cls_member.impl, (sqlalchemy.orm.attributes.ScalarObjectAttributeImpl,
                                             sqlalchemy.orm.attributes.CollectionAttributeImpl))
     column_is_foreign = classmethod(column_is_foreign)
+
+    def column_is_sortable(cls, name):
+        cls_member = getattr(cls, name, None)
+        if cls_member:
+            # FIXME: Implement way of figuring out if the column
+            # resides on the actual table or not.
+            return False
+        else:
+            return False
+    column_is_sortable = classmethod(column_is_sortable)
 
     def get_column_subtype(cls, name):
         cls_member = getattr(cls, name)
