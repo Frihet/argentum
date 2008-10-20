@@ -12,7 +12,7 @@ class BaseModel(object):
         for col in dir(type(self)):
             if col.endswith('__default'):
                 value_col = col[:-len('__default')]
-                
+
                 # Only set default values if no values are provided.
                 if not getattr(self, value_col, None):
                     setattr(self, value_col, getattr(self, col))
@@ -25,7 +25,7 @@ class BaseModel(object):
         return "%s.%s" % (type(self).__module__, type(self).__name__)
 
     def __str__(self):
-        return str(unicode(self))    
+        return str(unicode(self))
 
     def __repr__(self):
         def strattr(name):
@@ -37,7 +37,7 @@ class BaseModel(object):
         return "<%s.%s%s>" % (type(self).__module__, type(self).__name__,
                               ','.join(["\n %s=%s" % (name, strattr(name))
                                         for name in self.get_column_names()]))
-        
+
     def get_columns(cls, exclude_primary_keys = False, exclude_foreign_keys = False):
         return [(name, col)
                 for (name, col) in [(name, getattr(cls, name))
@@ -115,16 +115,16 @@ class BaseModel(object):
                                                                                                              cls.__module__, cls.__name__,
                                                                                                              foreign_cls.__module__, foreign_cls.__name__))
     get_column_foreign_column = classmethod(get_column_foreign_column)
-    
+
     def get_column_foreign_keys(cls, name):
         return getattr(cls, name).impl.callable_.im_self.foreign_keys
     get_column_foreign_keys = classmethod(get_column_foreign_keys)
-    
+
     def get_column_primary_join(cls, name):
         return getattr(cls, name).impl.callable_.im_self.primaryjoin
     get_column_primary_join = classmethod(get_column_primary_join)
 
-    def copy(self, override = {}, copy_foreign = True, indent = ''):
+    def copy(self, override = {}, copy_foreign = True, indent = '', session=None):
         if debug_copy:
             print "%sCOPY %s.%s @ %s" % (indent, type(self).__module__, type(self).__name__, self.id)
         res = {}
@@ -153,6 +153,21 @@ class BaseModel(object):
                             res[name].extend(value)
                 else:
                     res[name] = value
+
+                    # FIXME: Figure out how to make the ORM load this on access instead
+                    if session and name.endswith('_id'):
+                        self._load_foreign(session, res, name, value)
+
+
         if hasattr(self, "is_current"):
             self.is_current = False
+
         return type(self)(**res)
+
+    def _load_foreign(self, session, res, name, value):
+        name_object = name[:-3]
+        foreign = getattr(self, name_object, None)
+
+        if foreign is not None:
+            foreign_type = type(foreign)
+            res[name_object] = session.query(foreign_type).filter(foreign_type.id == value).one()
