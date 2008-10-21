@@ -46,11 +46,14 @@ class BaseModel(object):
                         hasattr(col, 'impl')
                     and isinstance(col.impl, sqlalchemy.orm.attributes.AttributeImpl)
 
-                    # Filter out primary and foreign keys, if requested
+                    and not (exclude_foreign_keys
+                             and isinstance(col.impl, (sqlalchemy.orm.attributes.ScalarObjectAttributeImpl,
+                                                       sqlalchemy.orm.attributes.CollectionAttributeImpl)))
+
+                    # Filter out properties, primary and foreign keys, if requested
                     and not (isinstance(col.comparator.prop, sqlalchemy.orm.properties.ColumnProperty)
                              and col.comparator.prop.columns
-                             and (   (exclude_foreign_keys and col.comparator.prop.columns[0].foreign_keys)
-                                  or (exclude_primary_keys and col.comparator.prop.columns[0].primary_key))))]
+                             and (exclude_primary_keys and col.comparator.prop.columns[0].primary_key)))]
     get_columns = classmethod(get_columns)
 
     def get_columns_and_instances(self, *arg, **kw):
@@ -80,13 +83,7 @@ class BaseModel(object):
     column_is_foreign = classmethod(column_is_foreign)
 
     def column_is_sortable(cls, name):
-        cls_member = getattr(cls, name, None)
-        if cls_member:
-            # FIXME: Implement way of figuring out if the column
-            # resides on the actual table or not.
-            return False
-        else:
-            return False
+        return name in (x[0] for x in cls.get_columns(cls, exclude_foreign_keys=True))
     column_is_sortable = classmethod(column_is_sortable)
 
     def get_column_subtype(cls, name):
