@@ -39,7 +39,10 @@ FalseWhere = False_ = sqlalchemy.sql.literal(1) == sqlalchemy.sql.literal(2)
 class View(sqlalchemy.schema.SchemaItem, sqlalchemy.sql.expression.TableClause):
     __visit_name__ = 'table'
 
-    def __init__(self, name, metadata, expression, primary_key = None, column_args = {}, column_kws = {}, **kw):
+    create_statement = "create %(options)s %(name)s as %(select)s"
+    drop_statement = "drop %(options)s %(name)s"
+
+    def __init__(self, name, metadata, expression, primary_key = None, column_args = {}, column_kws = {}, is_materialized = False, **kw):
         super(View, self).__init__(name, **kw)
         metadata.append_ddl_listener('after-create', self.create)
         metadata.append_ddl_listener('before-drop', self.drop)
@@ -95,6 +98,15 @@ class View(sqlalchemy.schema.SchemaItem, sqlalchemy.sql.expression.TableClause):
             self.columns[primary_key].primary_key = True
             self._primary_key = sqlalchemy.sql.expression.ColumnCollection(self.columns[primary_key])
 
+        self.is_materialized = is_materialized
+
+    def get_options(self, preparer):
+        if self.is_materialized:
+            print "MATERIALIZED", preparer.format_table(self)
+            return "materialized view"
+        else:
+            return "view"
+
     def create(self, event, metadata, bind):
         try:
             self.drop(event, metadata, bind)
@@ -121,9 +133,9 @@ class View(sqlalchemy.schema.SchemaItem, sqlalchemy.sql.expression.TableClause):
                                                  str(select))) % params
         params = {}
 
-        bind.execute("create view %(name)s as %(select)s" %
-                     {'name': preparer.format_table(self),
-                      'select': select},
+        bind.execute(self.create_statement % {'options': self.get_options(preparer),
+                                              'name': preparer.format_table(self),
+                                              'select': select},
                      params)
 
         # FIXME: sqlalchemy.schema.DDL unescapes its parameters
@@ -135,12 +147,20 @@ class View(sqlalchemy.schema.SchemaItem, sqlalchemy.sql.expression.TableClause):
     def drop(self, event, metadata, bind):
         # Get preparer to quote table/view name
         preparer = bind.dialect.preparer(bind.dialect)
-        bind.execute("drop view %(name)s" %
-                     {'name': preparer.format_table(self)})
+        bind.execute(self.drop_statement %
+                     {'options': self.get_options(preparer),
+                      'name': preparer.format_table(self)})
 
         # FIXME: sqlalchemy.schema.DDL unescapes its parameters
 #         sqlalchemy.schema.DDL("drop view %(name)s" %
 #                               {'name': self.name}).execute(bind)
+
+    def update_materialized_view(self, bind):
+        # Get preparer to quote table/view name
+        preparer = bind.dialect.preparer(bind.dialect)
+
+        bind.execute("begin dbms_mview.refresh('%(name)s','C'); end;" % {
+            'name': preparer.format_table(self)})
 
 class StashedRelation(object):
     def __init__(self, rel):
@@ -192,7 +212,9 @@ class ViewEntityMeta(elixir.EntityMeta, type):
                 self.expression,
                 self.primary_key,
                 column_args,
-                {})
+                {},
+                self.__dict__.get('ag_is_materialized', False) # Note: Don't inherit ag_is_materialized, it has to be set on each class separately!
+                )
 
             relation_args = {}
             for col_name, rel in columns.iteritems():
@@ -219,6 +241,8 @@ class ViewEntity(object):
     __metaclass__ = ViewEntityMeta
     primary_key = 'id'
 
+    ag_is_materialized = False
+
     class Descriptor(object):
         # This is just to fool Elixir we're a table :)
         
@@ -227,7 +251,10 @@ class ViewEntity(object):
             
         def find_relationship(self, name):
             return getattr(self.view, name)
-        
+
+    @classmethod
+    def update_materialized_view(self, session):
+        self.table.update_materialized_view(session.bind)
 
 relarg = {}    
 relarg_many_to_one = {'use_alter': True}
