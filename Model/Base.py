@@ -1,6 +1,6 @@
 import sqlalchemy
 
-debug_copy = False
+debug_copy = True
 
 class BaseModel(object):
     """This class extends SQLAlchemy models with some extra utility
@@ -129,7 +129,7 @@ class BaseModel(object):
             print "%sCOPY %s.%s @ %s" % (indent, type(self).__module__, type(self).__name__, self.id)
         res = {}
         for name, value in self.get_column_instances(exclude_primary_keys = True,
-                                                     exclude_foreign_keys = True):
+                                                     exclude_foreign_keys = not copy_foreign):
             if name in override:
                 res[name] = override[name]
             else:
