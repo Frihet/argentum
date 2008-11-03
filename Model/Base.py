@@ -1,6 +1,6 @@
 import sqlalchemy
 
-debug_copy = True
+debug_copy = False
 
 class BaseModel(object):
     """This class extends SQLAlchemy models with some extra utility
