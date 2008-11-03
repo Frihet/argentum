@@ -254,6 +254,7 @@ class ViewEntity(object):
 
     @classmethod
     def update_materialized_view(self, session):
+        print "Update materialized", self
         self.table.update_materialized_view(session.bind)
 
 relarg = {}    

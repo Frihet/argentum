@@ -20,7 +20,7 @@
 # Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
 # USA
 
-import sqlalchemy, operator, elixir
+import sqlalchemy, operator, elixir, sys
 
 def group_by_list(expr, *cols):
     """
@@ -91,8 +91,14 @@ def attributes_from_table(table, *attrs):
     return res
 
 
+def make_class(module_name, name, base_clss, **members):
+    members['__module__'] = module_name
 
-def sum_view(module, name, base_cls, id_cols, sum_output_cols, sum_cols, filter):
+    res = type(name, base_clss, members)
+    setattr(sys.modules[module_name], name, res)
+    return res
+
+def sum_view(module_name, name, base_cls, id_cols, sum_output_cols, sum_cols, filter):
     base_table = base_cls.table.alias()
     base_cols = base_table.c.keys()
     
@@ -111,14 +117,11 @@ def sum_view(module, name, base_cls, id_cols, sum_output_cols, sum_cols, filter)
         *[getattr(base_table.c, col)
           for col in cols])
 
-    members = {}
-    members['__module__'] = module.__name__
-    members['expression'] = expression
-
     # Handle foreign keys
+    members = {}
     for sum_col in sum_cols:
         members[sum_col[:-3]] = None
 
-    res = type(name, (base_cls,), members)
-    setattr(module, name, res)
-    return res
+    members['expression'] = expression
+
+    return make_class(module_name, name, (base_cls,), **members)

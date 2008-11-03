@@ -32,21 +32,21 @@ if 'initial' in kws:
 else:
     options.add('help')
 
-hide = []
+hide = ()
 if 'hide' in kws:
-    hide = [getModelPath(path) for path in kws['hide'].split(',')]
+    hide = tuple(getModelPath(path) for path in kws['hide'].split(','))
 
-hide_children = []
+hide_children = ()
 if 'hide-children' in kws:
-    hide_children = [getModelPath(path) for path in kws['hide-children'].split(',')]
+    hide_children = tuple(getModelPath(path) for path in kws['hide-children'].split(','))
 
-hide_attributes = []
+hide_attributes = ()
 if 'hide-attributes' in kws:
-    hide_attributes = [getModelPath(path) for path in kws['hide-attributes'].split(',')]
+    hide_attributes = tuple(getModelPath(path) for path in kws['hide-attributes'].split(','))
 
-compact_attributes = []
+compact_attributes = ()
 if 'compact-attributes' in kws:
-    compact_attributes = kws['compact-attributes'].split(',')
+    compact_attributes = tuple(kws['compact-attributes'].split(','))
 
 if 'help' in options:
     print """Usage: DataTree.py --model=MODEL --initial=INITIAL OPTIONS
@@ -95,7 +95,7 @@ def visit(obj, done = set(), indent = ''):
         if 'compact' in options and id(obj) in done:
             extra = " Reoccured: See above for details"
         else:
-            if type(obj) not in hide_attributes and type(obj) not in hide:
+            if not isinstance(obj, hide_attributes) and not isinstance(obj, hide):
                 extra = "\n%s| %s" % (indent,
                                       ', '.join(["%s=%s" % (name, getattr(obj, name))
                                                  for name in local]))
@@ -112,7 +112,7 @@ def visit(obj, done = set(), indent = ''):
                                   id(obj),
                                   extra)
 
-        if id(obj) not in done and type(obj) not in hide_children and type(obj) not in hide:
+        if id(obj) not in done and not isinstance(obj, hide_children) and not isinstance(obj, hide):
             done.add(id(obj))
             for name in foreign:
                 sub = getattr(obj, name)
