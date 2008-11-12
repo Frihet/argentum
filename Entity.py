@@ -36,6 +36,8 @@ False_ = sqlalchemy.sql.literal(1) == sqlalchemy.sql.literal(2)
 TrueWhere = True_ = sqlalchemy.sql.literal(1) == sqlalchemy.sql.literal(1)
 FalseWhere = False_ = sqlalchemy.sql.literal(1) == sqlalchemy.sql.literal(2)
 
+debug_materialized = False
+
 class View(sqlalchemy.schema.SchemaItem, sqlalchemy.sql.expression.TableClause):
     __visit_name__ = 'table'
 
@@ -254,7 +256,7 @@ class ViewEntity(object):
 
     @classmethod
     def update_materialized_view(self, session):
-        print "Update materialized", self
+        if debug_materialized: print "Update materialized", self
         self.table.update_materialized_view(session.bind)
 
 relarg = {}    
