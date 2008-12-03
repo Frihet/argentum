@@ -22,6 +22,9 @@
 
 import sqlalchemy, operator, elixir, sys
 
+def nulliszero(value):
+    return sqlalchemy.func.coalesce(value, 0.0)
+
 def group_by_list(expr, *cols):
     """
     Applies all group_by for all columns in cols on expr.
