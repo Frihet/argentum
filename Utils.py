@@ -101,7 +101,7 @@ def make_class(module_name, name, base_clss, **members):
     setattr(sys.modules[module_name], name, res)
     return res
 
-def sum_view(module_name, name, base_cls, id_cols, sum_output_cols, sum_cols, filter):
+def sum_view(module_name, name, base_cls, id_cols, sum_output_cols, sum_cols, filter, is_pseudo_materialized = False):
     base_table = base_cls.table.alias()
     base_cols = base_table.c.keys()
     
@@ -126,5 +126,6 @@ def sum_view(module_name, name, base_cls, id_cols, sum_output_cols, sum_cols, fi
         members[sum_col[:-3]] = None
 
     members['expression'] = expression
+    members['ag_is_pseudo_materialized'] = is_pseudo_materialized
 
     return make_class(module_name, name, (base_cls,), **members)

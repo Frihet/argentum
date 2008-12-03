@@ -29,6 +29,34 @@
 
 
 import sqlalchemy, sqlalchemy.sql, sqlalchemy.orm, elixir, re
+import weakref
+
+def find_views(expression):
+    if isinstance(expression, View):
+        return [expression]
+    for ignore in (sqlalchemy.schema.Column, sqlalchemy.schema.Table,sqlalchemy.sql.expression._ColumnClause, sqlalchemy.sql.expression.ClauseList ):
+        if isinstance(expression, ignore):
+            return []
+    if hasattr(expression,'locate_all_froms'):
+        out = []
+        for i in list(expression.locate_all_froms()):
+            out = out + find_views(i)
+        return out
+    elif hasattr(expression,'original'):
+        return find_views(expression.original)
+    else:
+        if hasattr(expression,'get_children'):
+            out = []
+            for elem in expression.get_children():
+                out = out + find_views(elem)
+            return out
+    print "Don't know how to locate froms in expression", expression
+    print "of type", type(expression)
+    print "with items", dir(expression)
+    return []
+
+    
+
 
 True_ = sqlalchemy.sql.literal(1) == sqlalchemy.sql.literal(1)
 False_ = sqlalchemy.sql.literal(1) == sqlalchemy.sql.literal(2)
@@ -38,19 +66,44 @@ FalseWhere = False_ = sqlalchemy.sql.literal(1) == sqlalchemy.sql.literal(2)
 
 debug_materialized = False
 
+all_pseudo_materialized_views=[]
+
+def soil_all_pseudo_materialized():
+    for view in all_pseudo_materialized_views:
+        view.soil();
+
 class View(sqlalchemy.schema.SchemaItem, sqlalchemy.sql.expression.TableClause):
     __visit_name__ = 'table'
 
-    create_statement = "create %(options)s %(name)s as %(select)s"
+    create_statement = "create %(options)s %(name)s %(tail_options)s as %(select)s"
     drop_statement = "drop %(options)s %(name)s"
+    insert_statement = "insert into %(name)s %(select)s"
+    delete_statement = "delete from %(name)s"
+    materialize_statement = "begin dbms_mview.refresh('%(name)s','C'); end;"
 
-    def __init__(self, name, metadata, expression, primary_key = None, column_args = {}, column_kws = {}, is_materialized = False, **kw):
+    def __init__(self,
+                 name,
+                 metadata,
+                 expression,
+                 primary_key = None,
+                 column_args = {},
+                 column_kws = {},
+                 is_materialized = False,
+                 is_pseudo_materialized = False,
+                 **kw):
+        is_materialized = False
         super(View, self).__init__(name, **kw)
         metadata.append_ddl_listener('after-create', self.create)
         metadata.append_ddl_listener('before-drop', self.drop)
-        self.metadata = metadata
-        
+        self.select_internal = None
+        self.is_pseudo_materialized = is_pseudo_materialized
         self._expression = expression
+        self._dependants = weakref.WeakValueDictionary()
+        self._dependencies = None
+        self.dirty = not is_materialized
+        if is_pseudo_materialized:
+            all_pseudo_materialized_views.append(self)
+            
 
         attributes_to_copy = ("nullable",
                               "default",
@@ -59,39 +112,47 @@ class View(sqlalchemy.schema.SchemaItem, sqlalchemy.sql.expression.TableClause):
                               "unique",
                               "autoincrement",
                               "quote")
+
         if primary_key is None:
             attributes_to_copy += ('primary_key')
 
-        for key in  self._expression.columns.keys():
-            # FIXME: How should this be handled in the real world?
-            column = self._expression.columns[key]
+        entities = [self]
 
-            args = []
-            if hasattr(column , 'constraints'):
-                args = [constraint.copy() for constraint in column.constraints]
-            args.extend(
-                (foreign_key.copy()
-                 for foreign_key
-                 in column.foreign_keys))
+        for entity in [self]:
+            entity.metadata = metadata
+            for key in  expression.columns.keys():
+                # FIXME: How should this be handled in the real world?
+                column = expression.columns[key]
 
-            if key in column_args:
-                if isinstance(column_args[key], (list, tuple)):
-                    args.extend(column_args[key])
-                else:
-                    args.append(column_args[key])
+                args = []
+                if hasattr(column , 'constraints'):
+                    args = [constraint.copy() for constraint in column.constraints]
+                args.extend(
+                    (foreign_key.copy()
+                     for foreign_key
+                     in column.foreign_keys))
+
+                if key in column_args:
+                    if isinstance(column_args[key], (list, tuple)):
+                        args.extend(column_args[key])
+                    else:
+                        args.append(column_args[key])
                 
-            kws = dict(
-                ((col_name, getattr(column, col_name))
-                 for col_name in attributes_to_copy if hasattr(column, col_name)))
+                kws = dict(
+                    ((col_name, getattr(column, col_name))
+                     for col_name in attributes_to_copy if hasattr(column, col_name)))
             
-            if key in column_kws:
-                kws.update(column_kws[key])
+                if key in column_kws:
+                    kws.update(column_kws[key])
 
-            copy = sqlalchemy.schema.Column(key,
-                                            column.type,
-                                            *args,
-                                            **kws)
-            copy._set_parent(self)
+                copy = sqlalchemy.schema.Column(key,
+                                                column.type,
+                                                *args,
+                                                **kws)
+                copy._set_parent(entity)
+
+        for table in self.get_dependencies():
+            table._dependants[id(self)] = self
 
         if primary_key is not None:
             if not isinstance(primary_key, (str, unicode)):
@@ -102,18 +163,51 @@ class View(sqlalchemy.schema.SchemaItem, sqlalchemy.sql.expression.TableClause):
 
         self.is_materialized = is_materialized
 
-    def get_options(self, preparer):
-        if self.is_materialized:
-            print "MATERIALIZED", preparer.format_table(self)
+
+    def get_dependencies(self):
+        if self._dependencies is None:
+            self._dependencies = find_views(self._expression)
+        return self._dependencies
+
+    def get_options(self):
+        if self.is_pseudo_materialized:
+            return "global temporary table"
+        elif self.is_materialized:
+            return "materialized view"
+        else:
+            return "view"
+
+    def get_tail_options(self):
+        if self.is_pseudo_materialized:
+            return "on commit preserve rows"
+        return ""
+    
+    def get_drop_options(self):
+        if self.is_pseudo_materialized:
+            return "table"
+        elif self.is_materialized:
             return "materialized view"
         else:
             return "view"
 
     def create(self, event, metadata, bind):
-        try:
-            self.drop(event, metadata, bind)
-        except:
-            pass
+        for my_type in ['view','materilized view', 'table']:
+            try:
+                sql = "drop %(type)s %(name)s" % {'type': my_type, 'name': self.get_name(bind)}
+                bind.execute(sql)
+            except:
+                pass
+            
+        bind.execute(self.create_statement % {'options': self.get_options(),
+                                              'name': self.get_name(bind),
+                                              'select': self.get_select(bind),
+                                              'tail_options': self.get_tail_options()},
+                     {})
+        self.dirty = False
+
+    def get_select(self, bind):
+        if self.select_internal:
+            return self.select_internal
         
         select = self._expression.compile(bind = bind)
         params = select.construct_params()
@@ -133,36 +227,65 @@ class View(sqlalchemy.schema.SchemaItem, sqlalchemy.sql.expression.TableClause):
         select = findparams1.sub(r"'%(\1)s'",
                                  findparams2.sub(r"'%(\1)s'",
                                                  str(select))) % params
-        params = {}
 
-        bind.execute(self.create_statement % {'options': self.get_options(preparer),
-                                              'name': preparer.format_table(self),
-                                              'select': select},
-                     params)
+        self.select_internal = select
+        return select
 
-        # FIXME: sqlalchemy.schema.DDL unescapes its parameters
-#         sqlalchemy.schema.DDL("create view %(name)s as %(select)s" %
-#                               {'name': self.name,
-#                                'select': select},
-#                               context=params).execute(bind)
+    # FIXME: sqlalchemy.schema.DDL unescapes its parameters
+    #         sqlalchemy.schema.DDL("create view %(name)s as %(select)s" %
+    #                               {'name': self.name,
+    #                                'select': select},
+    #                               context=params).execute(bind)
+
+    def get_name(self, bind):
+        preparer = bind.dialect.preparer(bind.dialect)
+        return preparer.format_table(self)
                               
     def drop(self, event, metadata, bind):
-        # Get preparer to quote table/view name
-        preparer = bind.dialect.preparer(bind.dialect)
         bind.execute(self.drop_statement %
-                     {'options': self.get_options(preparer),
-                      'name': preparer.format_table(self)})
+                     {'options': self.get_drop_options(),
+                      'name': self.get_name(bind)})
 
-        # FIXME: sqlalchemy.schema.DDL unescapes its parameters
-#         sqlalchemy.schema.DDL("drop view %(name)s" %
-#                               {'name': self.name}).execute(bind)
+    # FIXME: sqlalchemy.schema.DDL unescapes its parameters
+    #         sqlalchemy.schema.DDL("drop view %(name)s" %
+    #                               {'name': self.name}).execute(bind)
 
-    def update_materialized_view(self, bind):
-        # Get preparer to quote table/view name
-        preparer = bind.dialect.preparer(bind.dialect)
+    # def update_materialized_view(self, bind):
+    # Get preparer to quote table/view name
 
-        bind.execute("begin dbms_mview.refresh('%(name)s','C'); end;" % {
-            'name': preparer.format_table(self)})
+
+    def refresh(self, bind):
+        # Start by refreshing things we depend on
+        
+        for view in self.get_dependencies():
+            view.refresh(bind)
+
+        if self.is_pseudo_materialized:
+            if self.dirty:
+                print "Perform refresh on", self.name
+                bind.execute(self.delete_statement % { 'name':   self.get_name(bind)})
+                bind.execute(self.insert_statement % { 'name':   self.get_name(bind),
+                                                       'select': self.get_select(bind)})
+
+#                bind.execute("insert into tjoho (id) values (123456)")
+#                print "Inserted stuff, going to sleeep now"
+#                import time
+#                time.sleep(60)
+#                print "Desired content:",list(bind.execute(self.get_select(bind)));
+#                print "Content:", list(bind.execute("select * from %s" % self.get_name(bind)));
+                
+                
+                self.dirty = False
+        elif self.is_materialized:
+            bind.execute(self.materialize_statement % { 'name': self.get_name(bind) })            
+            self.dirty = False
+
+    def soil(self):
+        if self.dirty:
+            return
+        self.dirty = True
+        for dependant in self._dependants.itervalues():
+            dependant.soil()
 
 class StashedRelation(object):
     def __init__(self, rel):
@@ -215,7 +338,8 @@ class ViewEntityMeta(elixir.EntityMeta, type):
                 self.primary_key,
                 column_args,
                 {},
-                self.__dict__.get('ag_is_materialized', False) # Note: Don't inherit ag_is_materialized, it has to be set on each class separately!
+                self.__dict__.get('ag_is_materialized', False), # Note: Don't inherit ag_is_materialized, it has to be set on each class separately!
+                self.__dict__.get('ag_is_pseudo_materialized', False) # Note: Don't inherit ag_is_pseudo_materialized, it has to be set on each class separately!
                 )
 
             relation_args = {}
@@ -244,6 +368,21 @@ class ViewEntity(object):
     primary_key = 'id'
 
     ag_is_materialized = False
+
+    def soil():
+        """
+        Mark this pseudo-view as dirty, i.e. in need of a refresh
+        before it is used again. This should only be run on
+        pseudo_materialized views.
+        """
+        if not self.ag_is_pseudo_materialized:
+            print "Warning: Regular view marked as dirty!"
+        self.__metaclass__.table.dirty = True
+
+    @property
+    def all_pre_queries(self):
+        return self.__metaclass__.table.get_all_pre_queries()
+
 
     class Descriptor(object):
         # This is just to fool Elixir we're a table :)

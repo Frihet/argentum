@@ -56,6 +56,7 @@ def create_engine(url):
         real_kws = {}
         real_kws.update(engine.session_arguments)
         real_kws.update(kws)
+        print "Real kws",real_kws
         BaseSession = sqlalchemy.orm.sessionmaker(bind=engine, **real_kws)
         class Session(BaseSession):
             def __enter__(self):
