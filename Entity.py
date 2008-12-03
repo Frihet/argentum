@@ -396,7 +396,7 @@ class ViewEntity(object):
     @classmethod
     def update_materialized_view(self, session):
         if debug_materialized: print "Update materialized", self
-        self.table.update_materialized_view(session.bind)
+        self.table.refresh(session.connection())
 
 relarg = {}    
 relarg_many_to_one = {'use_alter': True}
