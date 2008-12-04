@@ -3,26 +3,21 @@
 from __future__ import with_statement
 import sys, Argentum
 
-#  Parse options
-kws = dict([arg[2:].split('=', 1)
-            for arg in sys.argv[1:]
-            if arg.startswith('--') and '=' in arg])
-options = set([arg[2:]
-               for arg in sys.argv[1:]
-               if arg.startswith('--') and '=' not in arg])
-files = [arg
-         for arg in sys.argv[1:]
-         if not arg.startswith('--')]
+def parse_options(argv):
+    #  Parse options
+    kws = dict([arg[2:].split('=', 1)
+                for arg in argv
+                if arg.startswith('--') and '=' in arg])
+    options = set([arg[2:]
+                   for arg in argv
+                   if arg.startswith('--') and '=' not in arg])
+    files = [arg
+             for arg in argv
+             if not arg.startswith('--')]
 
-model = None
-if 'model' in kws:
-    model = __import__(kws['model'])
-    for item in kws['model'].split('.')[1:]:
-        model = getattr(model, item)
-else:
-    options.add('help')
+    return (kws, options, files)
 
-if 'help' in options:
+def help():
     print """Usage: SetupDatabase.py --model=ORM.Model.Python.Module.Path OPTIONS
     Where OPTIONS are
         --drop
@@ -42,33 +37,52 @@ if 'help' in options:
         for key, value in getattr(model, 'initial_data_params', {}).iteritems():
             print """        --%s
             %s""" % (key, value)
+            
     sys.exit(0)
 
-if "sqllogging" in options:
-    import logging
-    logging.basicConfig()
-    logging.getLogger('sqlalchemy.engine').setLevel(logging.INFO)
-    logging.getLogger('sqlalchemy.sql.compiler.IdentifierPreparer').setLevel(logging.INFO)
+def setup(options, kws, files):
+    if 'model' not in kws:
+        raise ValueError('required argument model not specified')
 
-import sqlalchemy, sqlalchemy.orm, elixir
+    model = model = __import__(kws['model'])
+    for item in kws['model'].split('.')[1:]:
+        model = getattr(model, item)
 
-if 'drop' in options:
-    print "DROPPING ALL TABLES"
-    elixir.drop_all(bind=model.engine)
+    import sqlalchemy, sqlalchemy.orm, elixir
 
-if 'schema' in options or 'all' in options:
-    print "CREATING TABLES"
-    elixir.create_all(bind=model.engine)
+    if 'drop' in options:
+        print "DROPPING ALL TABLES"
+        elixir.drop_all(bind=model.engine)
 
-if 'views' in options:
-    print "(RE)CREATING VIEWS"
-    with model.engine.Session() as session:
-        for view_method in elixir.metadata.ddl_listeners['after-create']:
-            view = view_method.im_self
-            if isinstance(view, Argentum.View):
-                view_method(None, elixir.metadata, session.bind)
-    
-if 'data' in options or 'all' in options:
-    print "INSERTING ORIGINAL DATA"
-    with model.engine.Session() as session:
-        model.createInitialData(session, *options, **kws)
+    if 'schema' in options or 'all' in options:
+        print "CREATING TABLES"
+        elixir.create_all(bind=model.engine)
+
+    if 'views' in options:
+        print "(RE)CREATING VIEWS"
+        with model.engine.Session() as session:
+            for view_method in elixir.metadata.ddl_listeners['after-create']:
+                view = view_method.im_self
+                if isinstance(view, Argentum.View):
+                    view_method(None, elixir.metadata, session.bind)
+
+    if 'data' in options or 'all' in options:
+        print "INSERTING ORIGINAL DATA"
+        with model.engine.Session() as session:
+            model.createInitialData(session, *options, **kws)
+
+if __name__ == '__main__':
+    # Get options
+    kws, options, files = parse_options(sys.argv[1:])
+
+    # Handle command line only options
+    if 'help' in options or 'model' not in kws:
+        help()
+
+    if "sqllogging" in options:
+        import logging
+        logging.basicConfig()
+        logging.getLogger('sqlalchemy.engine').setLevel(logging.INFO)
+        logging.getLogger('sqlalchemy.sql.compiler.IdentifierPreparer').setLevel(logging.INFO)
+
+    setup(options, kws, files)
