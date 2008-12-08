@@ -30,6 +30,46 @@
 
 import sqlalchemy, sqlalchemy.engine, sqlalchemy.exceptions
 import sqlalchemy.sql, sqlalchemy.orm, sqlalchemy.pool
+import Entity
+
+BaseConnection = sqlalchemy.engine.base.Connection
+class Connection(BaseConnection):
+
+    is_refreshing = False
+
+    @property
+    def should_close_with_result(self):
+        return not self.is_refreshing and BaseConnection.should_close_with_result.__get__(self)
+
+    def execute(self, *arg, **kw):
+
+        if hasattr(self,'_Connection__close_with_result'):
+            tmp = self._Connection__close_with_result
+            self._Connection__close_with_result=False
+
+        if hasattr(self,'__close_with_result'):
+            tmp2 = self.__close_with_result
+            self.__close_with_result=False
+
+        try:
+            if not self.is_refreshing:
+                self.is_refreshing = True
+                Entity.refresh_views(arg[0], self)
+        except Exception, instance:
+            print "Unexpected error while performing refresh:", instance
+
+        if hasattr(self,'_Connection__close_with_result'):
+            self.__close_with_result = tmp
+
+        if hasattr(self,'__close_with_result'):
+            self.__close_with_result = tmp2
+
+        self.is_refreshing = False
+        return BaseConnection.execute(self, *arg, **kw)
+            
+
+sqlalchemy.engine.base.Connection = Connection
+
 
 def create_engine(url):
     # Setup a connection pool. To get this working parsing of the URL

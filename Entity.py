@@ -31,6 +31,11 @@
 import sqlalchemy, sqlalchemy.sql, sqlalchemy.orm, elixir, re
 import weakref
 
+def refresh_views(expression, connection):
+    for view in find_views(expression):
+        if not view.is_materialized:
+            view.refresh(connection)
+        
 def find_views(expression):
     if isinstance(expression, View):
         return [expression]
@@ -50,9 +55,9 @@ def find_views(expression):
             for elem in expression.get_children():
                 out = out + find_views(elem)
             return out
-    print "Don't know how to locate froms in expression", expression
-    print "of type", type(expression)
-    print "with items", dir(expression)
+#    print "Don't know how to locate froms in expression" #, expression
+#    print "of type", type(expression)
+#    print "with items", dir(expression)
     return []
 
     
@@ -91,7 +96,7 @@ class View(sqlalchemy.schema.SchemaItem, sqlalchemy.sql.expression.TableClause):
                  is_materialized = False,
                  is_pseudo_materialized = False,
                  **kw):
-        is_materialized = False
+#        is_materialized = False
         super(View, self).__init__(name, **kw)
         metadata.append_ddl_listener('after-create', self.create)
         metadata.append_ddl_listener('before-drop', self.drop)
@@ -103,7 +108,7 @@ class View(sqlalchemy.schema.SchemaItem, sqlalchemy.sql.expression.TableClause):
         self.dirty = not is_materialized
         if is_pseudo_materialized:
             all_pseudo_materialized_views.append(self)
-            
+            print "View", name, "is pseudo-materialized!!"
 
         attributes_to_copy = ("nullable",
                               "default",
@@ -178,8 +183,6 @@ class View(sqlalchemy.schema.SchemaItem, sqlalchemy.sql.expression.TableClause):
             return "view"
 
     def get_tail_options(self):
-        if self.is_pseudo_materialized:
-            return "on commit preserve rows"
         return ""
     
     def get_drop_options(self):
@@ -191,13 +194,19 @@ class View(sqlalchemy.schema.SchemaItem, sqlalchemy.sql.expression.TableClause):
             return "view"
 
     def create(self, event, metadata, bind):
-        for my_type in ['view','materilized view', 'table']:
+        for my_type in ['view','materialized view', 'table']:
             try:
                 sql = "drop %(type)s %(name)s" % {'type': my_type, 'name': self.get_name(bind)}
                 bind.execute(sql)
             except:
                 pass
-            
+
+        if self.is_pseudo_materialized:
+            print "create pseudo-materialized view", self.get_name(bind)
+
+        if self.is_materialized:
+            print "create materialized view", self.get_name(bind)
+
         bind.execute(self.create_statement % {'options': self.get_options(),
                                               'name': self.get_name(bind),
                                               'select': self.get_select(bind),
@@ -256,30 +265,22 @@ class View(sqlalchemy.schema.SchemaItem, sqlalchemy.sql.expression.TableClause):
 
     def refresh(self, bind):
         # Start by refreshing things we depend on
-        
-        for view in self.get_dependencies():
-            view.refresh(bind)
+            for view in self.get_dependencies():
+                if not view.is_materialized:
+                    view.refresh(bind)
 
-        if self.is_pseudo_materialized:
-            if self.dirty:
-                print "Perform refresh on", self.name
-                bind.execute(self.delete_statement % { 'name':   self.get_name(bind)})
-                bind.execute(self.insert_statement % { 'name':   self.get_name(bind),
-                                                       'select': self.get_select(bind)})
-
-#                bind.execute("insert into tjoho (id) values (123456)")
-#                print "Inserted stuff, going to sleeep now"
-#                import time
-#                time.sleep(60)
-#                print "Desired content:",list(bind.execute(self.get_select(bind)));
-#                print "Content:", list(bind.execute("select * from %s" % self.get_name(bind)));
-                
-                
+            if self.is_pseudo_materialized:
+                if self.dirty:
+                    print "Perform refresh on", self.name
+                    bind.execute(self.delete_statement % { 'name':   self.get_name(bind)})
+                    bind.execute(self.insert_statement % { 'name':   self.get_name(bind),
+                                                           'select': self.get_select(bind)})
+                    #print "inserted", self.name
+                    self.dirty = False
+            elif self.is_materialized:
+                bind.execute(self.materialize_statement % { 'name': self.get_name(bind) })            
                 self.dirty = False
-        elif self.is_materialized:
-            bind.execute(self.materialize_statement % { 'name': self.get_name(bind) })            
-            self.dirty = False
-
+                
     def soil(self):
         if self.dirty:
             return
@@ -394,7 +395,7 @@ class ViewEntity(object):
             return getattr(self.view, name)
 
     @classmethod
-    def update_materialized_view(self, session):
+    def refresh(self, session):
         if debug_materialized: print "Update materialized", self
         self.table.refresh(session.connection())
 
