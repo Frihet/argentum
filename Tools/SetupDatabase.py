@@ -1,6 +1,7 @@
 #! /usr/bin/env python2.5
 
 from __future__ import with_statement
+
 import sys, Argentum
 
 def parse_options(argv):
@@ -27,6 +28,8 @@ def help():
         --schema
             Create all tables and views
         --views
+        --skip-materialized
+            Do not (re)create materialized views
         --data
             Insert initial data into tables
         --sqllogging
@@ -64,7 +67,8 @@ def setup(options, kws, files):
             for view_method in elixir.metadata.ddl_listeners['after-create']:
                 view = view_method.im_self
                 if isinstance(view, Argentum.View):
-                    view_method(None, elixir.metadata, session.bind)
+                    if not 'skip-materialized' in options or not view.is_materialized:
+                        view_method(None, elixir.metadata, session.bind)
 
     if 'data' in options or 'all' in options:
         print "INSERTING ORIGINAL DATA"
