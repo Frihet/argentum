@@ -36,24 +36,34 @@ def refresh_views(expression, connection):
         if not view.is_materialized:
             view.refresh(connection)
         
-def find_views(expression):
+def find_views(expression, include_tables=False):
     if isinstance(expression, View):
         return [expression]
-    for ignore in (sqlalchemy.schema.Column, sqlalchemy.schema.Table,sqlalchemy.sql.expression._ColumnClause, sqlalchemy.sql.expression.ClauseList ):
+    if isinstance(expression, sqlalchemy.schema.Table):
+        if include_tables:
+            return [expression]
+        else:
+            return []
+    for ignore in (sqlalchemy.schema.Column, sqlalchemy.sql.expression._ColumnClause, sqlalchemy.sql.expression.ClauseList ):
         if isinstance(expression, ignore):
             return []
     if hasattr(expression,'locate_all_froms'):
         out = []
-        for i in list(expression.locate_all_froms()):
-            out = out + find_views(i)
+        for fr in list(expression.locate_all_froms()):
+            for el in find_views(fr, include_tables):
+                if el not in out:
+                    out.append(el)
+
         return out
     elif hasattr(expression,'original'):
-        return find_views(expression.original)
+        return find_views(expression.original, include_tables)
     else:
         if hasattr(expression,'get_children'):
             out = []
             for elem in expression.get_children():
-                out = out + find_views(elem)
+                for el in find_views(elem, include_tables):
+                    if el not in out:
+                        out.append(el)
             return out
 #    print "Don't know how to locate froms in expression" #, expression
 #    print "of type", type(expression)
@@ -104,7 +114,7 @@ class View(sqlalchemy.schema.SchemaItem, sqlalchemy.sql.expression.TableClause):
         self.is_pseudo_materialized = is_pseudo_materialized
         self._expression = expression
         self._dependants = weakref.WeakValueDictionary()
-        self._dependencies = None
+        self._dependencies = [None, None]
         self.dirty = not is_materialized
         if is_pseudo_materialized:
             all_pseudo_materialized_views.append(self)
@@ -169,10 +179,10 @@ class View(sqlalchemy.schema.SchemaItem, sqlalchemy.sql.expression.TableClause):
         self.is_materialized = is_materialized
 
 
-    def get_dependencies(self):
-        if self._dependencies is None:
-            self._dependencies = find_views(self._expression)
-        return self._dependencies
+    def get_dependencies(self, include_tables=False):
+        if self._dependencies[include_tables] is None:
+            self._dependencies[include_tables] = find_views(self._expression, include_tables)
+        return self._dependencies[include_tables]
 
     def get_options(self):
         if self.is_pseudo_materialized:
