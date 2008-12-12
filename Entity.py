@@ -85,7 +85,7 @@ all_pseudo_materialized_views=[]
 
 def soil_all_pseudo_materialized():
     for view in all_pseudo_materialized_views:
-        view.soil();
+        view.soil()
 
 class View(sqlalchemy.schema.SchemaItem, sqlalchemy.sql.expression.TableClause):
     __visit_name__ = 'table'
@@ -106,6 +106,7 @@ class View(sqlalchemy.schema.SchemaItem, sqlalchemy.sql.expression.TableClause):
                  is_materialized = False,
                  is_pseudo_materialized = False,
                  **kw):
+#        is_pseudo_materialized = False
 #        is_materialized = False
         super(View, self).__init__(name, **kw)
         metadata.append_ddl_listener('after-create', self.create)
@@ -116,9 +117,9 @@ class View(sqlalchemy.schema.SchemaItem, sqlalchemy.sql.expression.TableClause):
         self._dependants = weakref.WeakValueDictionary()
         self._dependencies = [None, None]
         self.dirty = not is_materialized
+        self._soil_count = 0
         if is_pseudo_materialized:
             all_pseudo_materialized_views.append(self)
-            print "View", name, "is pseudo-materialized!!"
 
         attributes_to_copy = ("nullable",
                               "default",
@@ -273,28 +274,33 @@ class View(sqlalchemy.schema.SchemaItem, sqlalchemy.sql.expression.TableClause):
     # Get preparer to quote table/view name
 
 
-    def refresh(self, bind):
+    def refresh(self, connection):
         # Start by refreshing things we depend on
             for view in self.get_dependencies():
                 if not view.is_materialized:
-                    view.refresh(bind)
+                    view.refresh(connection)
 
             if self.is_pseudo_materialized:
-                if self.dirty:
-                    print "Perform refresh on", self.name
-                    bind.execute(self.delete_statement % { 'name':   self.get_name(bind)})
-                    bind.execute(self.insert_statement % { 'name':   self.get_name(bind),
-                                                           'select': self.get_select(bind)})
+                if not hasattr(connection, "_soil_count"):
+                    connection._soil_count = {}
+                if not self in connection._soil_count:
+                    do_refresh = True
+                else:
+                    do_refresh = connection._soil_count[self] != self._soil_count
+
+                connection._soil_count[self] = self._soil_count
+
+                if do_refresh:
+                    connection.execute(self.delete_statement % { 'name':   self.get_name(connection)})
+                    connection.execute(self.insert_statement % { 'name':   self.get_name(connection),
+                                                           'select': self.get_select(connection)})
                     #print "inserted", self.name
-                    self.dirty = False
             elif self.is_materialized:
-                bind.execute(self.materialize_statement % { 'name': self.get_name(bind) })            
+                connection.execute(self.materialize_statement % { 'name': self.get_name(connection) })            
                 self.dirty = False
                 
     def soil(self):
-        if self.dirty:
-            return
-        self.dirty = True
+        self._soil_count += 1
         for dependant in self._dependants.itervalues():
             dependant.soil()
 
