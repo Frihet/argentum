@@ -38,6 +38,7 @@ class BaseModel(object):
                               ','.join(["\n %s=%s" % (name, strattr(name))
                                         for name in self.get_column_names()]))
 
+    @classmethod
     def get_columns(cls, exclude_primary_keys = False, exclude_foreign_keys = False):
         return [(name, col)
                 for (name, col) in [(name, getattr(cls, name))
@@ -54,7 +55,13 @@ class BaseModel(object):
                     and not (isinstance(col.comparator.prop, sqlalchemy.orm.properties.ColumnProperty)
                              and col.comparator.prop.columns
                              and (exclude_primary_keys and col.comparator.prop.columns[0].primary_key)))]
-    get_columns = classmethod(get_columns)
+
+    @classmethod
+    def get_many_to_many_crossref_info(cls, column_name):
+        # Don't just return the column object, as the user might want
+        # to do alias() on the table first!
+        columns = getattr(cls, column_name).impl.callable_.im_self.remote_side
+        return columns[0].table, columns[0].name, columns[1].name
 
     def get_columns_and_instances(self, *arg, **kw):
         return [(name, col, getattr(self, name))
@@ -64,35 +71,36 @@ class BaseModel(object):
         return [(name, value)
                 for (name, col, value) in self.get_columns_and_instances(*arg, **kw)]
 
+    @classmethod
     def get_column_names(cls, *arg, **kw):
         return [name
                 for (name, col) in cls.get_columns(*arg, **kw)]
-    get_column_names = classmethod(get_column_names)
 
 
+    @classmethod
     def column_is_scalar(cls, name):
         cls_member = getattr(cls, name)
         return isinstance(cls_member.impl, (sqlalchemy.orm.attributes.ScalarAttributeImpl,
                                             sqlalchemy.orm.attributes.ScalarObjectAttributeImpl))
-    column_is_scalar = classmethod(column_is_scalar)
 
+    @classmethod
     def column_is_foreign(cls, name):
         cls_member = getattr(cls, name)
         return isinstance(cls_member.impl, (sqlalchemy.orm.attributes.ScalarObjectAttributeImpl,
                                             sqlalchemy.orm.attributes.CollectionAttributeImpl))
-    column_is_foreign = classmethod(column_is_foreign)
 
+    @classmethod
     def column_is_sortable(cls, name):
         return name in (x[0] for x in cls.get_columns(cls, exclude_foreign_keys=True))
-    column_is_sortable = classmethod(column_is_sortable)
 
+    @classmethod
     def get_column_subtype(cls, name):
         cls_member = getattr(cls, name)
         # Yes, this sucks, it is icky, but it's the only way to get at it
         # :(
         return cls_member.impl.is_equal.im_self
-    get_column_subtype = classmethod(get_column_subtype)
 
+    @classmethod
     def get_column_foreign_class(cls, name):
         """This fetches the foreign key-pointed-to class for a column
         given the class member. The class member should be of one of the
@@ -102,8 +110,8 @@ class BaseModel(object):
         # Yes, this sucks, it is icky, but it's the only way to get at it
         # :(
         return cls_member.impl.callable_.im_self.mapper.class_
-    get_column_foreign_class = classmethod(get_column_foreign_class)
 
+    @classmethod
     def get_column_foreign_column(cls, name, return_none_for_none = False):
         cls_member = getattr(cls, name)
         for ext in cls_member.impl.extensions:
@@ -114,15 +122,14 @@ class BaseModel(object):
         raise Exception("Column %s of class %s.%s does not have a back-ref column in foreign class %s.%s" % (name,
                                                                                                              cls.__module__, cls.__name__,
                                                                                                              foreign_cls.__module__, foreign_cls.__name__))
-    get_column_foreign_column = classmethod(get_column_foreign_column)
 
+    @classmethod
     def get_column_foreign_keys(cls, name):
         return getattr(cls, name).impl.callable_.im_self.foreign_keys
-    get_column_foreign_keys = classmethod(get_column_foreign_keys)
 
+    @classmethod
     def get_column_primary_join(cls, name):
         return getattr(cls, name).impl.callable_.im_self.primaryjoin
-    get_column_primary_join = classmethod(get_column_primary_join)
 
     def copy(self, override = {}, copy_foreign = True, indent = '', session=None):
         if debug_copy:
