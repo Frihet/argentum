@@ -178,3 +178,36 @@ class BaseModel(object):
         if foreign is not None:
             foreign_type = type(foreign)
             res[name_object] = session.query(foreign_type).filter(foreign_type.id == value).one()
+
+
+
+
+    def debug_row_ids(self, id_col = 'ID'):
+        c = self.db_session.connection()
+
+        res = c.execute(sqlalchemy.select([self.ww_filter.DBModel.table]))
+
+        cols = res.keys
+        id_pos = cols.index(id_col)
+
+        dct = {}
+        for row in res:
+            if row[id_pos] not in dct:
+                dct[row[id_pos]] = []
+            dct[row[id_pos]].append(row)
+
+        dct_duplicates = dict((name, value) for (name, value) in dct.iteritems()
+                              if len(value) > 1)
+
+        if dct_duplicates:
+            duplicate = dct_duplicates[dct_duplicates.keys()[0]]
+
+            print "ROW1", ', '.join('%s=%s' % (name, value) for (name, value) in zip(cols, duplicate[0]))
+
+            print "ROW2", ', '.join('%s=%s' % (name, value1)
+                                    for (name, value0, value1)
+                                    in zip(cols, duplicate[0], duplicate[1])
+                                    if value0 != value1)
+        else:
+            print "No duplicate id:s"
+
