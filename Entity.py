@@ -35,43 +35,50 @@ def refresh_views(expression, connection):
     for view in find_views(expression):
         if not view.is_materialized:
             view.refresh(connection)
-        
+
+
 def find_views(expression, include_tables=False):
-    if isinstance(expression, View):
-        return [expression]
-    if isinstance(expression, sqlalchemy.schema.Table):
-        if include_tables:
-            return [expression]
-        else:
-            return []
-    for ignore in (sqlalchemy.schema.Column, sqlalchemy.sql.expression._ColumnClause, sqlalchemy.sql.expression.ClauseList ):
-        if isinstance(expression, ignore):
-            return []
-    if hasattr(expression,'locate_all_froms'):
-        out = []
-        for fr in list(expression.locate_all_froms()):
-            for el in find_views(fr, include_tables):
-                if el not in out:
-                    out.append(el)
+    def locate_froms_in_all_subselects_and_everywhere(obj):
+        froms = set()
+        
+        if hasattr(obj, '_get_from_objects'):
+            try:
+                _froms = obj._get_from_objects()
+            except NotImplementedError:
+                pass
+            else:
+                froms.update(_froms)
+                for el in _froms:
+                    if el is not obj:
+                        froms.update(locate_froms_in_all_subselects_and_everywhere(el))
 
-        return out
-    elif hasattr(expression,'original'):
-        return find_views(expression.original, include_tables)
-    else:
-        if hasattr(expression,'get_children'):
-            out = []
-            for elem in expression.get_children():
-                for el in find_views(elem, include_tables):
-                    if el not in out:
-                        out.append(el)
-            return out
-#    print "Don't know how to locate froms in expression" #, expression
-#    print "of type", type(expression)
-#    print "with items", dir(expression)
-    return []
+        for col in getattr(obj, '_raw_columns', []):
+            froms.update(locate_froms_in_all_subselects_and_everywhere(col))
 
-    
+        if getattr(obj, '_whereclause', None) is not None:
+            froms.update(locate_froms_in_all_subselects_and_everywhere(obj._whereclause))
 
+        for elem in getattr(obj, '_froms', []):
+            froms.add(elem)
+            froms.update(locate_froms_in_all_subselects_and_everywhere(elem))
+
+        if hasattr(obj, 'elem'):
+            froms.update(locate_froms_in_all_subselects_and_everywhere(obj.elem))
+
+        return froms
+
+    def alias_to_selectable(alias_or_selectable):
+        if isinstance(alias_or_selectable, sqlalchemy.sql.expression.Alias):
+            return alias_or_selectable.selectable
+        return alias_or_selectable
+
+    res = [from_clause for from_clause
+            in set(alias_to_selectable(obj) for obj
+                   in locate_froms_in_all_subselects_and_everywhere(expression))
+           if (   isinstance(from_clause, View)
+               or (    include_tables
+                   and isinstance(from_clause, sqlalchemy.schema.Table)))]
+    return res
 
 True_ = sqlalchemy.sql.literal(1) == sqlalchemy.sql.literal(1)
 False_ = sqlalchemy.sql.literal(1) == sqlalchemy.sql.literal(2)
@@ -109,6 +116,7 @@ class View(sqlalchemy.schema.SchemaItem, sqlalchemy.sql.expression.TableClause):
 #        is_pseudo_materialized = False
 #        is_materialized = False
         super(View, self).__init__(name, **kw)
+        self.fulhack = name
         metadata.append_ddl_listener('after-create', self.create)
         metadata.append_ddl_listener('before-drop', self.drop)
         self.select_internal = None
@@ -276,28 +284,29 @@ class View(sqlalchemy.schema.SchemaItem, sqlalchemy.sql.expression.TableClause):
 
     def refresh(self, connection):
         # Start by refreshing things we depend on
-            for view in self.get_dependencies():
-                if not view.is_materialized:
-                    view.refresh(connection)
 
-            if self.is_pseudo_materialized:
-                if not hasattr(connection, "_soil_count"):
-                    connection._soil_count = {}
-                if not self in connection._soil_count:
-                    do_refresh = True
-                else:
-                    do_refresh = connection._soil_count[self] != self._soil_count
+        for view in self.get_dependencies():
+            if not view.is_materialized:
+                view.refresh(connection)
 
-                connection._soil_count[self] = self._soil_count
+        if self.is_pseudo_materialized:
+            if not hasattr(connection, "_soil_count"):
+                connection._soil_count = {}
+            if not self in connection._soil_count:
+                do_refresh = True
+            else:
+                do_refresh = connection._soil_count[self] != self._soil_count
 
-                if do_refresh:
-                    connection.execute(self.delete_statement % { 'name':   self.get_name(connection)})
-                    connection.execute(self.insert_statement % { 'name':   self.get_name(connection),
+            connection._soil_count[self] = self._soil_count
+
+            if do_refresh:
+                connection.execute(self.delete_statement % { 'name':   self.get_name(connection)})
+                connection.execute(self.insert_statement % { 'name':   self.get_name(connection),
                                                            'select': self.get_select(connection)})
-                    #print "inserted", self.name
-            elif self.is_materialized:
-                connection.execute(self.materialize_statement % { 'name': self.get_name(connection) })            
-                self.dirty = False
+                #print "inserted", self.name
+        elif self.is_materialized:
+            connection.execute(self.materialize_statement % { 'name': self.get_name(connection) })            
+            self.dirty = False
                 
     def soil(self):
         self._soil_count += 1
