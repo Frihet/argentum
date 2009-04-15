@@ -18,7 +18,7 @@ def parse_options(argv):
 
     return (kws, options, files)
 
-def help():
+def help(model):
     print """Usage: SetupDatabase.py --model=ORM.Model.Python.Module.Path OPTIONS
     Where OPTIONS are
         --drop
@@ -43,9 +43,9 @@ def help():
             
     sys.exit(0)
 
-def setup(options, kws, files):
+def load_model(options, kws, files):
     if 'model' not in kws:
-        raise ValueError('required argument model not specified')
+        return None
 
     model = model = __import__(kws['model'])
     for item in kws['model'].split('.')[1:]:
@@ -53,6 +53,9 @@ def setup(options, kws, files):
 
     import sqlalchemy, sqlalchemy.orm, elixir
 
+    return model
+
+def setup(model, options, kws, files):
     if 'drop' in options:
         print "DROPPING ALL TABLES"
         elixir.drop_all(bind=model.engine)
@@ -79,9 +82,11 @@ if __name__ == '__main__':
     # Get options
     kws, options, files = parse_options(sys.argv[1:])
 
+    model = load_model(options, kws, files)
+
     # Handle command line only options
     if 'help' in options or 'model' not in kws:
-        help()
+        help(model)
 
     if "sqllogging" in options:
         import logging
@@ -89,4 +94,4 @@ if __name__ == '__main__':
         logging.getLogger('sqlalchemy.engine').setLevel(logging.INFO)
         logging.getLogger('sqlalchemy.sql.compiler.IdentifierPreparer').setLevel(logging.INFO)
 
-    setup(options, kws, files)
+    setup(model, options, kws, files)
