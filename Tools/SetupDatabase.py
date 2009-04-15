@@ -3,6 +3,7 @@
 from __future__ import with_statement
 
 import sys, Argentum
+import sqlalchemy, sqlalchemy.orm, elixir
 
 def parse_options(argv):
     #  Parse options
@@ -51,11 +52,12 @@ def load_model(options, kws, files):
     for item in kws['model'].split('.')[1:]:
         model = getattr(model, item)
 
-    import sqlalchemy, sqlalchemy.orm, elixir
-
     return model
 
-def setup(model, options, kws, files):
+def setup(options, kws, files, model = None):
+    if model is None:
+        model = load_model(options, kws, files)
+    
     if 'drop' in options:
         print "DROPPING ALL TABLES"
         elixir.drop_all(bind=model.engine)
@@ -94,4 +96,4 @@ if __name__ == '__main__':
         logging.getLogger('sqlalchemy.engine').setLevel(logging.INFO)
         logging.getLogger('sqlalchemy.sql.compiler.IdentifierPreparer').setLevel(logging.INFO)
 
-    setup(model, options, kws, files)
+    setup(options, kws, files, model)
